@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import schools, students, attendance, fees, leave, meetings
+from app.routers import schools, students, attendance, fees, leave, meetings, classes
 
 app = FastAPI(
     title="CampOS API",
@@ -22,6 +22,7 @@ app.add_middleware(
 
 # ── Routers — one per domain ──────────────────────────────────────────────────
 app.include_router(schools.router)
+app.include_router(classes.router)
 app.include_router(students.router)
 app.include_router(attendance.router)
 app.include_router(fees.router)

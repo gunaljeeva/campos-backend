@@ -57,6 +57,19 @@ class ClassOut(ClassCreate):
     model_config = {"from_attributes": True}
 
 
+class ClassTeacherProfile(BaseModel):
+    full_name: Optional[str] = None
+
+
+class ClassTeacherInfo(BaseModel):
+    profile_id: Optional[UUID] = None
+    profiles: Optional[ClassTeacherProfile] = None
+
+
+class ClassWithTeacherOut(ClassOut):
+    teachers: Optional[ClassTeacherInfo] = None
+
+
 class TeacherUpdate(BaseModel):
     employee_code: Optional[str] = None
     department: Optional[str] = None
