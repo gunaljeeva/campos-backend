@@ -1,0 +1,206 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from uuid import UUID
+from app.database import get_db
+from app.auth import get_current_user_id, require_school_admin
+from app.models.finance import FeeStructure, Invoice, TeacherSalary, SchoolExpense
+from app.models.academic import Student
+from app.schemas.finance import (
+    FeeStructureCreate, FeeStructureOut,
+    InvoiceCreate, InvoiceOut, InvoiceUpdate,
+    BulkGenerateRequest, BulkGenerateResult,
+    TeacherSalaryCreate, TeacherSalaryOut,
+    SchoolExpenseCreate, SchoolExpenseOut,
+)
+from datetime import datetime
+
+router = APIRouter(prefix="/fees", tags=["Finance"])
+
+
+# ── Fee Structures ────────────────────────────────────────────────────────────
+
+@router.get("/structures", response_model=list[FeeStructureOut])
+async def list_fee_structures(
+    school_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    result = await db.execute(select(FeeStructure).where(FeeStructure.school_id == str(school_id)))
+    return result.scalars().all()
+
+
+@router.post("/structures", response_model=FeeStructureOut, status_code=201)
+async def create_fee_structure(
+    body: FeeStructureCreate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    fs = FeeStructure(**{k: str(v) if isinstance(v, UUID) else v for k, v in body.model_dump().items()})
+    db.add(fs)
+    await db.flush()
+    return fs
+
+
+@router.delete("/structures/{fs_id}", status_code=204)
+async def delete_fee_structure(
+    fs_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    fs = await db.get(FeeStructure, str(fs_id))
+    if not fs:
+        raise HTTPException(404, "Fee structure not found")
+    await db.delete(fs)
+
+
+# ── Invoices ──────────────────────────────────────────────────────────────────
+
+@router.get("/invoices", response_model=list[InvoiceOut])
+async def list_invoices(
+    school_id: UUID = Query(...),
+    student_id: UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    q = select(Invoice).where(Invoice.school_id == str(school_id))
+    if student_id:
+        q = q.where(Invoice.student_id == str(student_id))
+    result = await db.execute(q.order_by(Invoice.created_at.desc()))
+    return result.scalars().all()
+
+
+@router.post("/invoices", response_model=InvoiceOut, status_code=201)
+async def create_invoice(
+    body: InvoiceCreate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    inv = Invoice(**{k: str(v) if isinstance(v, UUID) else v for k, v in body.model_dump().items()})
+    db.add(inv)
+    await db.flush()
+    return inv
+
+
+@router.patch("/invoices/{invoice_id}", response_model=InvoiceOut)
+async def update_invoice(
+    invoice_id: UUID,
+    body: InvoiceUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    inv = await db.get(Invoice, str(invoice_id))
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(inv, field, value)
+    return inv
+
+
+@router.post("/invoices/bulk-generate", response_model=BulkGenerateResult)
+async def bulk_generate_invoices(
+    body: BulkGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    fs = await db.get(FeeStructure, str(body.fee_structure_id))
+    if not fs:
+        raise HTTPException(404, "Fee structure not found")
+
+    q = select(Student).where(Student.school_id == str(body.school_id))
+    if fs.grade:
+        from app.models.academic import Class
+        classes_res = await db.execute(select(Class).where(Class.school_id == str(body.school_id), Class.grade == fs.grade))
+        class_ids = [c.id for c in classes_res.scalars().all()]
+        q = q.where(Student.class_id.in_(class_ids))
+
+    students_res = await db.execute(q)
+    students = students_res.scalars().all()
+
+    created = 0
+    skipped = 0
+    for student in students:
+        existing = await db.execute(
+            select(Invoice).where(
+                Invoice.school_id == str(body.school_id),
+                Invoice.student_id == student.id,
+                Invoice.fee_structure_id == str(body.fee_structure_id),
+            )
+        )
+        if existing.scalars().first():
+            skipped += 1
+            continue
+        db.add(Invoice(
+            school_id=str(body.school_id),
+            student_id=student.id,
+            fee_structure_id=str(body.fee_structure_id),
+            label=fs.label,
+            amount=fs.amount,
+            due_date=fs.due_date,
+        ))
+        created += 1
+
+    await db.flush()
+    return BulkGenerateResult(created=created, skipped=skipped)
+
+
+# ── Teacher Salaries ──────────────────────────────────────────────────────────
+
+@router.get("/salaries", response_model=list[TeacherSalaryOut])
+async def list_salaries(
+    school_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    result = await db.execute(select(TeacherSalary).where(TeacherSalary.school_id == str(school_id)).order_by(TeacherSalary.month.desc()))
+    return result.scalars().all()
+
+
+@router.post("/salaries", response_model=TeacherSalaryOut, status_code=201)
+async def create_salary(
+    body: TeacherSalaryCreate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    rec = TeacherSalary(**{k: str(v) if isinstance(v, UUID) else v for k, v in body.model_dump().items()})
+    db.add(rec)
+    await db.flush()
+    return rec
+
+
+@router.patch("/salaries/{salary_id}/mark-paid", response_model=TeacherSalaryOut)
+async def mark_salary_paid(
+    salary_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    rec = await db.get(TeacherSalary, str(salary_id))
+    if not rec:
+        raise HTTPException(404, "Salary record not found")
+    rec.status = "paid"
+    rec.paid_at = datetime.utcnow()
+    return rec
+
+
+# ── School Expenses ───────────────────────────────────────────────────────────
+
+@router.get("/expenses", response_model=list[SchoolExpenseOut])
+async def list_expenses(
+    school_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    result = await db.execute(select(SchoolExpense).where(SchoolExpense.school_id == str(school_id)).order_by(SchoolExpense.date.desc()))
+    return result.scalars().all()
+
+
+@router.post("/expenses", response_model=SchoolExpenseOut, status_code=201)
+async def create_expense(
+    body: SchoolExpenseCreate,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(require_school_admin),
+):
+    exp = SchoolExpense(**{k: str(v) if isinstance(v, UUID) else v for k, v in body.model_dump().items()}, created_by=str(user_id))
+    db.add(exp)
+    await db.flush()
+    return exp
