@@ -1,28 +1,43 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from typing import Optional
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
 from app.models.academic import Student
-from app.schemas.academic import StudentCreate, StudentOut, StudentUpdate
+from app.schemas.academic import StudentCreate, StudentOut, StudentUpdate, StudentWithClassOut
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
 
-@router.get("", response_model=list[StudentOut])
+@router.get("", response_model=list[StudentWithClassOut])
 async def list_students(
     school_id: UUID = Query(...),
     class_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(get_current_user_id),
 ):
-    q = select(Student).where(Student.school_id == str(school_id))
+    q = (
+        select(Student)
+        .where(Student.school_id == str(school_id))
+        .options(selectinload(Student.class_))
+    )
     if class_id:
         q = q.where(Student.class_id == str(class_id))
     result = await db.execute(q.order_by(Student.full_name))
-    return result.scalars().all()
+    students = result.scalars().all()
+    return [
+        {
+            **{c.name: getattr(s, c.name) for c in Student.__table__.columns},
+            "classes": (
+                {"grade": s.class_.grade, "section": s.class_.section}
+                if s.class_ else None
+            ),
+        }
+        for s in students
+    ]
 
 
 @router.get("/{student_id}", response_model=StudentOut)

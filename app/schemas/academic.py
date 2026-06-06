@@ -37,6 +37,15 @@ class StudentOut(StudentCreate):
     model_config = {"from_attributes": True}
 
 
+class StudentClassInfo(BaseModel):
+    grade: Optional[str] = None
+    section: Optional[str] = None
+
+
+class StudentWithClassOut(StudentOut):
+    classes: Optional[StudentClassInfo] = None
+
+
 class ClassCreate(BaseModel):
     school_id: UUID
     grade: str
