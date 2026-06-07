@@ -24,6 +24,14 @@ class FeeStructureOut(FeeStructureCreate):
     model_config = {"from_attributes": True}
 
 
+class FeeStructureUpdate(BaseModel):
+    label: Optional[str] = None
+    grade: Optional[str] = None
+    term: Optional[str] = None
+    amount: Optional[Decimal] = None
+    due_date: Optional[date] = None
+
+
 class InvoiceCreate(BaseModel):
     school_id: UUID
     student_id: UUID
@@ -42,9 +50,24 @@ class InvoiceUpdate(BaseModel):
 class InvoiceOut(InvoiceCreate):
     id: UUID
     status: InvoiceStatus
+    paid_at: Optional[datetime] = None
+    payment_ref: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class InvoiceStudentInfo(BaseModel):
+    full_name: Optional[str] = None
+    admission_no: Optional[str] = None
+
+
+class InvoiceWithStudentOut(InvoiceOut):
+    students: Optional[InvoiceStudentInfo] = None
+
+
+class MarkInvoicePaidRequest(BaseModel):
+    payment_ref: Optional[str] = None
 
 
 class BulkGenerateRequest(BaseModel):
@@ -64,10 +87,31 @@ class PaymentOut(BaseModel):
     student_id: UUID
     amount: Decimal
     method: Optional[str] = None
-    reference: Optional[str] = None
+    reference_no: Optional[str] = None
     status: str
     paid_at: Optional[datetime] = None
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentInvoiceInfo(BaseModel):
+    label: Optional[str] = None
+
+
+class PaymentStudentInfo(BaseModel):
+    full_name: Optional[str] = None
+
+
+class PaymentWithRefsOut(BaseModel):
+    id: UUID
+    reference_no: Optional[str] = None
+    amount: Decimal
+    method: Optional[str] = None
+    status: str
+    paid_at: Optional[datetime] = None
+    invoices: Optional[PaymentInvoiceInfo] = None
+    students: Optional[PaymentStudentInfo] = None
 
     model_config = {"from_attributes": True}
 

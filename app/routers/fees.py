@@ -1,17 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
-from app.models.finance import FeeStructure, Invoice, TeacherSalary, SchoolExpense
+from app.models.finance import FeeStructure, Invoice, Payment, TeacherSalary, SchoolExpense
 from app.models.academic import Student
 from app.schemas.finance import (
-    FeeStructureCreate, FeeStructureOut,
-    InvoiceCreate, InvoiceOut, InvoiceUpdate,
+    FeeStructureCreate, FeeStructureOut, FeeStructureUpdate,
+    InvoiceCreate, InvoiceOut, InvoiceUpdate, InvoiceWithStudentOut, MarkInvoicePaidRequest,
     BulkGenerateRequest, BulkGenerateResult,
     TeacherSalaryCreate, TeacherSalaryOut,
     SchoolExpenseCreate, SchoolExpenseOut,
+    PaymentWithRefsOut,
 )
 from datetime import datetime
 
@@ -54,20 +56,49 @@ async def delete_fee_structure(
     await db.delete(fs)
 
 
+@router.patch("/structures/{fs_id}", response_model=FeeStructureOut)
+async def update_fee_structure(
+    fs_id: UUID,
+    body: FeeStructureUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    fs = await db.get(FeeStructure, str(fs_id))
+    if not fs:
+        raise HTTPException(404, "Fee structure not found")
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(fs, field, value)
+    return fs
+
+
 # ── Invoices ──────────────────────────────────────────────────────────────────
 
-@router.get("/invoices", response_model=list[InvoiceOut])
+@router.get("/invoices", response_model=list[InvoiceWithStudentOut])
 async def list_invoices(
     school_id: UUID = Query(...),
     student_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(get_current_user_id),
 ):
-    q = select(Invoice).where(Invoice.school_id == str(school_id))
+    q = (
+        select(Invoice)
+        .where(Invoice.school_id == str(school_id))
+        .options(selectinload(Invoice.student))
+    )
     if student_id:
         q = q.where(Invoice.student_id == str(student_id))
     result = await db.execute(q.order_by(Invoice.created_at.desc()))
-    return result.scalars().all()
+    invoices = result.scalars().all()
+    return [
+        {
+            **{c.name: getattr(i, c.name) for c in Invoice.__table__.columns},
+            "students": (
+                {"full_name": i.student.full_name, "admission_no": i.student.admission_no}
+                if i.student else None
+            ),
+        }
+        for i in invoices
+    ]
 
 
 @router.post("/invoices", response_model=InvoiceOut, status_code=201)
@@ -94,6 +125,22 @@ async def update_invoice(
         raise HTTPException(404, "Invoice not found")
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(inv, field, value)
+    return inv
+
+
+@router.patch("/invoices/{invoice_id}/mark-paid", response_model=InvoiceOut)
+async def mark_invoice_paid(
+    invoice_id: UUID,
+    body: MarkInvoicePaidRequest,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    inv = await db.get(Invoice, str(invoice_id))
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    inv.status = "paid"
+    inv.paid_at = datetime.utcnow()
+    inv.payment_ref = body.payment_ref
     return inv
 
 
@@ -204,3 +251,31 @@ async def create_expense(
     db.add(exp)
     await db.flush()
     return exp
+
+
+# ── Payments (read-only; writes happen via the parent Razorpay flow) ───────────
+
+@router.get("/payments", response_model=list[PaymentWithRefsOut])
+async def list_payments(
+    school_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    q = (
+        select(Payment)
+        .where(Payment.school_id == str(school_id))
+        .options(selectinload(Payment.invoice), selectinload(Payment.student))
+        .order_by(Payment.paid_at.desc())
+        .limit(200)
+    )
+    result = await db.execute(q)
+    payments = result.scalars().all()
+    return [
+        {
+            "id": p.id, "reference_no": p.reference_no, "amount": p.amount,
+            "method": p.method, "status": p.status, "paid_at": p.paid_at,
+            "invoices": {"label": p.invoice.label} if p.invoice else None,
+            "students": {"full_name": p.student.full_name} if p.student else None,
+        }
+        for p in payments
+    ]
