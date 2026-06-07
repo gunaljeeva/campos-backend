@@ -1,7 +1,7 @@
 # Phase 4 — Finance: fee_structures, invoices, payments, school_expenses, teacher_salaries
 from sqlalchemy import String, DateTime, Text, ForeignKey, Date, Numeric, CheckConstraint, Integer
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, date
 from uuid import uuid4
 from decimal import Decimal
@@ -35,7 +35,11 @@ class Invoice(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String, default="pending")
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_ref: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    student: Mapped["Student"] = relationship()
 
 
 class Payment(Base):
@@ -47,10 +51,15 @@ class Payment(Base):
     student_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     method: Mapped[str | None] = mapped_column(String)
-    reference: Mapped[str | None] = mapped_column(String)
-    status: Mapped[str] = mapped_column(String, default="pending")
+    reference_no: Mapped[str | None] = mapped_column(String)
+    razorpay_order_id: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="completed")
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paid_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    invoice: Mapped["Invoice"] = relationship()
+    student: Mapped["Student"] = relationship()
 
 
 class SchoolExpense(Base):
