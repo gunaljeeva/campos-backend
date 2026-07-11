@@ -2,12 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from uuid import UUID
+from uuid import UUID, uuid4
 from typing import Optional
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
 from app.models.academic import Student
-from app.schemas.academic import StudentCreate, StudentOut, StudentUpdate, StudentWithClassOut
+from app.models.core import User, Profile, UserRole, Parent, ParentStudent
+from app.security import hash_password
+from app.schemas.academic import StudentCreateWithParent, StudentOut, StudentUpdate, StudentWithClassOut
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
@@ -54,13 +56,83 @@ async def get_student(
 
 @router.post("", response_model=StudentOut, status_code=201)
 async def create_student(
-    body: StudentCreate,
+    body: StudentCreateWithParent,
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(require_school_admin),
 ):
-    student = Student(**{k: str(v) if isinstance(v, UUID) else v for k, v in body.model_dump().items()})
+    """Create the student and, in the same transaction, provision (or reuse) the
+    parent's login account and link the two via parent_students.
+
+    The parent signs in with parent_email / parent_password and — through the
+    parent_students link — sees only this student (and any siblings created for
+    the same parent email)."""
+    school_id = str(body.school_id)
+    parent_email = body.parent_email.strip().lower()
+
+    # 1. Create the student.
+    student_fields = {
+        "school_id": school_id,
+        "class_id": str(body.class_id) if body.class_id else None,
+        "full_name": body.full_name,
+        "admission_no": body.admission_no,
+        "dob": body.dob,
+        "gender": body.gender,
+        "blood_group": body.blood_group,
+        "home_lat": body.home_lat,
+        "home_lng": body.home_lng,
+        "home_address": body.home_address,
+    }
+    student = Student(**student_fields)
     db.add(student)
     await db.flush()
+
+    # 2. Find or create the parent's login account.
+    existing_user = (
+        await db.execute(select(User).where(User.email == parent_email))
+    ).scalars().first()
+
+    if existing_user is not None:
+        parent = (
+            await db.execute(select(Parent).where(Parent.profile_id == existing_user.id))
+        ).scalars().first()
+        if parent is None:
+            # A user with this email exists but isn't a parent — refuse rather
+            # than silently attaching a child to a teacher/admin account.
+            raise HTTPException(
+                status_code=409,
+                detail="That email already belongs to a non-parent account",
+            )
+    else:
+        uid = str(uuid4())
+        db.add(User(id=uid, email=parent_email,
+                    password_hash=hash_password(body.parent_password), token_version=0))
+        await db.flush()  # users row first so profiles FK is satisfied
+        db.add(Profile(id=uid, full_name=body.parent_name))
+        db.add(UserRole(user_id=uid, role="parent", school_id=school_id))
+        await db.flush()
+        parent = Parent(profile_id=uid)
+        db.add(parent)
+        await db.flush()
+
+    # 3. Link parent <-> student (idempotent guard on re-link).
+    already_linked = (
+        await db.execute(
+            select(ParentStudent).where(
+                ParentStudent.parent_id == parent.id,
+                ParentStudent.student_id == student.id,
+            )
+        )
+    ).scalars().first()
+    if already_linked is None:
+        db.add(ParentStudent(
+            school_id=school_id,
+            parent_id=parent.id,
+            student_id=student.id,
+            relation=body.relation,
+            is_primary=True,
+        ))
+    await db.flush()
+
     return student
 
 

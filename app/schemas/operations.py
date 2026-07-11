@@ -33,6 +33,22 @@ class AttendanceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AttendanceNotifyRow(BaseModel):
+    school_id: UUID
+    class_id: UUID
+    student_id: UUID
+    date: date
+    status: AttendanceStatus
+    marked_by: Optional[UUID] = None
+
+
+class AttendanceBulkNotify(BaseModel):
+    school_id: UUID
+    date: date
+    upsert_rows: List[AttendanceNotifyRow]
+    notify_student_ids: List[UUID] = []
+
+
 class AttendanceSummary(BaseModel):
     student_id: UUID
     student_name: str

@@ -1,7 +1,9 @@
 # CampOS API — FastAPI Backend
 
 Python backend for the CampOS school management platform.
-Connects to the same Supabase Postgres database as the frontend.
+Connects to a local PostgreSQL database in development and a managed Postgres
+(Neon / Railway / RDS) in production. Schema is managed by Alembic migrations
+generated from the SQLAlchemy models.
 
 ## Stack
 - **FastAPI** — async REST API
@@ -11,20 +13,34 @@ Connects to the same Supabase Postgres database as the frontend.
 
 ## Setup
 
-```bash
-# 1. Create virtual env
+```powershell
+# 1. Create virtual env & install deps
 python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# 2. Install dependencies
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# 3. Configure environment
-cp .env.example .env
-# Fill in DATABASE_URL and SUPABASE_JWT_SECRET from Supabase dashboard
+# 2. Configure environment
+copy .env.example .env   # adjust DATABASE_URL / SUPABASE_JWT_SECRET if needed
 
-# 4. Run
+# 3. Start the local Postgres cluster (embedded, port 5433)
+.\scripts\pg.ps1 start
+
+# 4. Apply migrations (creates the schema)
+.\venv\Scripts\alembic.exe upgrade head
+
+# 5. (Optional) Reset schema + seed demo data and print a dev Bearer token
+.\venv\Scripts\python.exe scripts\dev_db.py
+
+# 6. Run the API
 uvicorn app.main:app --reload
+```
+
+### Migrations
+
+```powershell
+# After changing any model, autogenerate a migration and apply it:
+.\venv\Scripts\alembic.exe revision --autogenerate -m "describe change"
+.\venv\Scripts\alembic.exe upgrade head
 ```
 
 API docs available at: `http://localhost:8000/docs`
@@ -55,8 +71,28 @@ All users from that school load this palette on login.
 
 ## Auth
 
-Every endpoint requires a Supabase JWT in the `Authorization: Bearer <token>` header.
-The token is issued by Supabase Auth on sign-in — the frontend passes it as-is.
+Authentication is handled entirely by this backend (no Supabase). Users are stored
+in the `users` table (bcrypt password hash); we issue our own JWTs (HS256, signed
+with `JWT_SECRET`). Every protected endpoint expects `Authorization: Bearer <access_token>`.
+
+Endpoints (all under `/auth`):
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/auth/signup` | Create a user + profile (no role). Returns access + refresh tokens. |
+| POST | `/auth/login` | Exchange email + password for tokens. |
+| POST | `/auth/refresh` | Exchange a refresh token for a new token pair. |
+| GET | `/auth/me` | Current user: id, email, full name, roles. |
+| POST | `/auth/change-password` | Change password (revokes existing sessions). |
+| POST | `/auth/forgot-password` | Issue a reset token (logged/returned in dev; emailed in prod — Phase 4). |
+| POST | `/auth/reset-password` | Set a new password using a reset token. |
+
+Tokens carry a `ver` claim checked against the user's `token_version`; changing or
+resetting a password bumps it, instantly invalidating older tokens.
+
+Local dev logins (created by `scripts/dev_db.py`):
+- admin: `admin@campos.dev` / `admin123`
+- teacher: `teacher@campos.dev` / `teacher123`
 
 ## Key Endpoints
 

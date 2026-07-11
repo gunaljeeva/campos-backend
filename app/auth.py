@@ -1,24 +1,29 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
-from app.config import settings
+
 from app.database import get_db
+from app.security import decode_token
 
 security = HTTPBearer()
 
 
-def decode_token(token: str) -> dict:
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> UUID:
+    """Verify our access token and confirm it has not been revoked.
+
+    Rejects the token if its `ver` claim no longer matches the user's
+    `token_version` (which is bumped on password change/reset).
+    """
+    from app.models.core import User
+
     try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-        return payload
+        payload = decode_token(credentials.credentials, "access")
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -26,21 +31,17 @@ def decode_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-
-async def get_current_user_id(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> UUID:
-    payload = decode_token(credentials.credentials)
-    user_id = payload.get("sub")
-    if not user_id:
+    sub = payload.get("sub")
+    if not sub:
         raise HTTPException(status_code=401, detail="Token missing subject")
-    return UUID(user_id)
 
+    user = await db.get(User, sub)
+    if user is None:
+        raise HTTPException(status_code=401, detail="User no longer exists")
+    if payload.get("ver") != user.token_version:
+        raise HTTPException(status_code=401, detail="Token has been revoked")
 
-async def get_current_user_payload(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> dict:
-    return decode_token(credentials.credentials)
+    return UUID(sub)
 
 
 async def require_school_admin(
@@ -50,7 +51,7 @@ async def require_school_admin(
     from app.models.core import UserRole
     result = await db.execute(
         select(UserRole).where(
-            UserRole.user_id == user_id,
+            UserRole.user_id == str(user_id),
             UserRole.role.in_(["school_admin", "super_admin"]),
         )
     )
@@ -65,7 +66,7 @@ async def require_teacher(
 ) -> UUID:
     from app.models.academic import Teacher
     result = await db.execute(
-        select(Teacher).where(Teacher.profile_id == user_id)
+        select(Teacher).where(Teacher.profile_id == str(user_id))
     )
     if not result.scalars().first():
         raise HTTPException(status_code=403, detail="Teacher access required")

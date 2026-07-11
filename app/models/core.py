@@ -1,5 +1,5 @@
 # Phase 1 — Core: schools, profiles, user_roles, parents, parent_students
-from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey, CheckConstraint
+from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey, CheckConstraint, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
@@ -26,10 +26,26 @@ class School(Base):
     user_roles: Mapped[list["UserRole"]] = relationship(back_populates="school")
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    password_reset_token_hash: Mapped[str | None] = mapped_column(String)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class Profile(Base):
     __tablename__ = "profiles"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)  # = auth.uid()
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )  # 1:1 with users.id
     full_name: Mapped[str | None] = mapped_column(String)
     avatar_url: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

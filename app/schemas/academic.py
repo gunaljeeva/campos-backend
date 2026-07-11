@@ -17,6 +17,14 @@ class StudentCreate(BaseModel):
     home_address: Optional[str] = None
 
 
+class StudentCreateWithParent(StudentCreate):
+    """Admin creates the student together with the parent's login account."""
+    parent_name: str
+    parent_email: str
+    parent_password: str
+    relation: Optional[str] = None
+
+
 class StudentUpdate(BaseModel):
     class_id: Optional[UUID] = None
     full_name: Optional[str] = None
@@ -77,6 +85,17 @@ class ClassTeacherInfo(BaseModel):
 
 class ClassWithTeacherOut(ClassOut):
     teachers: Optional[ClassTeacherInfo] = None
+
+
+class TeacherCreate(BaseModel):
+    school_id: UUID
+    full_name: str
+    email: str
+    password: str
+    employee_code: Optional[str] = None
+    department: Optional[str] = None
+    qualification: Optional[str] = None
+    blood_group: Optional[str] = None
 
 
 class TeacherUpdate(BaseModel):

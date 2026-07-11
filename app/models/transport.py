@@ -30,11 +30,11 @@ class BusRoute(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
     school_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("schools.id", ondelete="CASCADE"), nullable=False)
-    bus_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("buses.id", ondelete="CASCADE"), nullable=False)
+    bus_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("buses.id", ondelete="CASCADE"))
     route_name: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    bus: Mapped["Bus"] = relationship(back_populates="routes")
+    bus: Mapped["Bus | None"] = relationship(back_populates="routes")
     stops: Mapped[list["BusStop"]] = relationship(back_populates="route", order_by="BusStop.sequence")
 
 

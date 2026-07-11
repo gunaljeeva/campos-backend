@@ -1,8 +1,8 @@
 """
 Local dev database bootstrap.
 
-Creates all tables from the SQLAlchemy models (no Supabase RLS/auth) against the
-local dev Postgres cluster, then seeds a minimal, working dataset:
+Resets the schema and applies the Alembic migrations against the local dev
+Postgres cluster, then seeds a minimal, working dataset:
 a school, an admin profile + school_admin role, a teacher, a class, students,
 and a fee structure + invoices.
 
@@ -21,19 +21,22 @@ from decimal import Decimal
 # Allow running as `python scripts/dev_db.py` from backend/ — put backend/ on the path.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import sqlalchemy as sa
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from jose import jwt
+from alembic.config import Config
+from alembic import command
 
 # Register every model on Base.metadata, and load settings (needs backend/.env).
 import app.models  # noqa: F401
-from app.database import Base
 from app.config import settings
-from app.models.core import School, Profile, UserRole
+from app.security import hash_password, create_access_token
+from app.models.core import User, School, Profile, UserRole
 from app.models.academic import Teacher, Class, Student
 from app.models.finance import FeeStructure, Invoice
 
-SYNC_URL = "postgresql+psycopg2://postgres@localhost:5433/campos"
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SYNC_URL = settings.database_url.replace("+asyncpg", "+psycopg2")
 
 # Fixed UUIDs so the script is idempotent and the token is stable.
 SCHOOL_ID = "00000000-0000-0000-0000-0000000005c0"
@@ -43,16 +46,30 @@ TEACHER_ID = "33333333-3333-3333-3333-333333333333"
 CLASS_ID = "44444444-4444-4444-4444-444444444444"
 FS_ID = "55555555-5555-5555-5555-555555555555"
 
+# Dev login credentials (created below; profiles.id now FKs users.id).
+ADMIN_EMAIL = "admin@campos.dev"
+ADMIN_PASSWORD = "admin123"
+TEACHER_EMAIL = "teacher@campos.dev"
+TEACHER_PASSWORD = "teacher123"
+
 
 def main() -> None:
     engine = create_engine(SYNC_URL, echo=False)
 
-    print("Dropping and recreating all tables from models ...")
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    print("Resetting schema and applying migrations ...")
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+
+    cfg = Config(os.path.join(BACKEND_DIR, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(BACKEND_DIR, "alembic"))
+    command.upgrade(cfg, "head")
 
     with Session(engine) as s:
         s.add(School(id=SCHOOL_ID, name="Delhi Royal School", city="Delhi", board="CBSE"))
+        # Users must exist before profiles (profiles.id -> users.id FK).
+        s.add(User(id=ADMIN_ID, email=ADMIN_EMAIL, password_hash=hash_password(ADMIN_PASSWORD), token_version=0))
+        s.add(User(id=TEACHER_PROFILE_ID, email=TEACHER_EMAIL, password_hash=hash_password(TEACHER_PASSWORD), token_version=0))
+        s.flush()
         s.add(Profile(id=ADMIN_ID, full_name="Dev Admin"))
         s.add(Profile(id=TEACHER_PROFILE_ID, full_name="Asha Sharma"))
         s.add(UserRole(user_id=ADMIN_ID, role="school_admin", school_id=SCHOOL_ID))
@@ -88,21 +105,14 @@ def main() -> None:
             ))
         s.commit()
 
-    token = jwt.encode(
-        {
-            "sub": ADMIN_ID,
-            "aud": "authenticated",
-            "role": "authenticated",
-            "exp": int((datetime.now(timezone.utc) + timedelta(days=365)).timestamp()),
-        },
-        settings.supabase_jwt_secret,
-        algorithm="HS256",
-    )
+    token = create_access_token(ADMIN_ID, 0)
 
     print("\nSeed complete.")
     print(f"  school_id = {SCHOOL_ID}")
+    print(f"  admin login   = {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+    print(f"  teacher login = {TEACHER_EMAIL} / {TEACHER_PASSWORD}")
     print(f"  admin user_id (token sub) = {ADMIN_ID}")
-    print("\nAdmin Bearer token (valid 365 days, signed with local SUPABASE_JWT_SECRET):\n")
+    print(f"\nAdmin access token (valid {settings.access_token_expire_minutes} min, our JWT):\n")
     print(token)
     print("\nTry it:")
     print(f'  curl -H "Authorization: Bearer {token[:24]}..." '

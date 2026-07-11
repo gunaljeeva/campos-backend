@@ -53,7 +53,16 @@ async def create_class(
     cls = Class(**payload)
     db.add(cls)
     await db.flush()
-    await db.refresh(cls, attribute_names=["homeroom_teacher"])
+    # Re-select with the teacher AND its profile eagerly loaded. Refreshing only
+    # `homeroom_teacher` leaves `homeroom_teacher.profile` unloaded, so _serialize
+    # would trigger a lazy load in async context (MissingGreenlet -> 500) whenever
+    # a homeroom teacher is assigned. Mirror the eager-load used by list_classes.
+    q = (
+        select(Class)
+        .where(Class.id == cls.id)
+        .options(selectinload(Class.homeroom_teacher).selectinload(Teacher.profile))
+    )
+    cls = (await db.execute(q)).scalar_one()
     return _serialize(cls)
 
 

@@ -64,6 +64,29 @@ class RequisitionOut(RequisitionCreate):
     model_config = {"from_attributes": True}
 
 
+class _ProfileName(BaseModel):
+    full_name: Optional[str] = None
+
+
+class _TeacherName(BaseModel):
+    profiles: Optional[_ProfileName] = None
+
+
+class RequisitionRowOut(RequisitionOut):
+    """Admin list row — includes the requesting teacher's name."""
+    teachers: Optional[_TeacherName] = None
+
+
+class _StudentName(BaseModel):
+    full_name: str
+
+
+class LeaveRowOut(LeaveRequestOut):
+    """List row — includes the student's / teacher's name."""
+    students: Optional[_StudentName] = None
+    teachers: Optional[_TeacherName] = None
+
+
 class StudyMaterialOut(BaseModel):
     id: UUID
     school_id: UUID
