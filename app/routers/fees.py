@@ -6,7 +6,8 @@ from uuid import UUID
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
 from app.models.finance import FeeStructure, Invoice, Payment, TeacherSalary, SchoolExpense
-from app.models.academic import Student
+from app.models.academic import Student, Teacher
+from app.models.core import Parent, ParentStudent, UserRole, Profile
 from app.schemas.finance import (
     FeeStructureCreate, FeeStructureOut, FeeStructureUpdate,
     InvoiceCreate, InvoiceOut, InvoiceUpdate, InvoiceWithStudentOut, MarkInvoicePaidRequest,
@@ -144,6 +145,49 @@ async def mark_invoice_paid(
     return inv
 
 
+@router.patch("/invoices/{invoice_id}/pay", response_model=InvoiceOut)
+async def pay_invoice(
+    invoice_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Parent-facing payment. Marks the invoice paid with a demo reference.
+
+    A parent may only pay an invoice for a student they're linked to via
+    parent_students; school admins may pay any invoice in their school."""
+    inv = await db.get(Invoice, str(invoice_id))
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+
+    is_admin = (
+        await db.execute(
+            select(UserRole).where(
+                UserRole.user_id == str(user_id),
+                UserRole.role.in_(["school_admin", "super_admin"]),
+            )
+        )
+    ).scalars().first() is not None
+
+    if not is_admin:
+        owns = (
+            await db.execute(
+                select(ParentStudent.id)
+                .join(Parent, Parent.id == ParentStudent.parent_id)
+                .where(
+                    Parent.profile_id == str(user_id),
+                    ParentStudent.student_id == inv.student_id,
+                )
+            )
+        ).first()
+        if owns is None:
+            raise HTTPException(403, "You can only pay invoices for your own child")
+
+    inv.status = "paid"
+    inv.paid_at = datetime.utcnow()
+    inv.payment_ref = f"DEMO-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    return inv
+
+
 @router.post("/invoices/bulk-generate", response_model=BulkGenerateResult)
 async def bulk_generate_invoices(
     body: BulkGenerateRequest,
@@ -193,14 +237,32 @@ async def bulk_generate_invoices(
 
 # ── Teacher Salaries ──────────────────────────────────────────────────────────
 
-@router.get("/salaries", response_model=list[TeacherSalaryOut])
+@router.get("/salaries")
 async def list_salaries(
     school_id: UUID = Query(...),
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(require_school_admin),
 ):
-    result = await db.execute(select(TeacherSalary).where(TeacherSalary.school_id == str(school_id)).order_by(TeacherSalary.month.desc()))
-    return result.scalars().all()
+    """Salary records with the linked teacher's code and name for display."""
+    rows = (
+        await db.execute(
+            select(TeacherSalary, Teacher.employee_code, Profile.full_name)
+            .join(Teacher, Teacher.id == TeacherSalary.teacher_id, isouter=True)
+            .join(Profile, Profile.id == Teacher.profile_id, isouter=True)
+            .where(TeacherSalary.school_id == str(school_id))
+            .order_by(TeacherSalary.month.desc())
+        )
+    ).all()
+    return [
+        {
+            **{c.name: getattr(s, c.name) for c in TeacherSalary.__table__.columns},
+            "teachers": {
+                "employee_code": emp_code,
+                "profiles": {"full_name": full_name} if full_name else None,
+            },
+        }
+        for s, emp_code, full_name in rows
+    ]
 
 
 @router.post("/salaries", response_model=TeacherSalaryOut, status_code=201)

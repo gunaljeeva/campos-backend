@@ -7,7 +7,7 @@ from app.auth import get_current_user_id, require_school_admin
 from app.models.academic import Teacher, Class
 from app.models.core import User, Profile, UserRole
 from app.security import hash_password
-from app.schemas.academic import TeacherCreate, TeacherOut
+from app.schemas.academic import TeacherCreate, TeacherOut, TeacherUpdate
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
@@ -100,4 +100,20 @@ async def create_teacher(
     await db.commit()
     await db.refresh(teacher)
 
+    return teacher
+
+
+@router.patch("/{teacher_id}", response_model=TeacherOut)
+async def update_teacher(
+    teacher_id: UUID,
+    body: TeacherUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    """Update a teacher's detail fields and/or active status."""
+    teacher = await db.get(Teacher, str(teacher_id))
+    if not teacher:
+        raise HTTPException(404, "Teacher not found")
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(teacher, field, value)
     return teacher

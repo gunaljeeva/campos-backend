@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 from typing import Optional
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
-from app.models.academic import Student
-from app.models.core import User, Profile, UserRole, Parent, ParentStudent
+from app.models.academic import Student, Class
+from app.models.core import User, Profile, UserRole, Parent, ParentStudent, School
 from app.security import hash_password
 from app.schemas.academic import StudentCreateWithParent, StudentOut, StudentUpdate, StudentWithClassOut
 
@@ -39,6 +39,42 @@ async def list_students(
             ),
         }
         for s in students
+    ]
+
+
+@router.get("/mine")
+async def list_my_children(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Students linked to the authenticated parent via parent_students, with
+    class and school info — powers the parent portal's child switcher."""
+    rows = (
+        await db.execute(
+            select(Student)
+            .join(ParentStudent, ParentStudent.student_id == Student.id)
+            .join(Parent, Parent.id == ParentStudent.parent_id)
+            .where(Parent.profile_id == str(user_id))
+            .options(selectinload(Student.class_), selectinload(Student.school))
+            .order_by(Student.full_name)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": s.id,
+            "school_id": s.school_id,
+            "class_id": s.class_id,
+            "full_name": s.full_name,
+            "admission_no": s.admission_no,
+            "photo_url": s.photo_url,
+            "classes": (
+                {"grade": s.class_.grade, "section": s.class_.section} if s.class_ else None
+            ),
+            "schools": (
+                {"name": s.school.name, "logo_url": s.school.logo_url} if s.school else None
+            ),
+        }
+        for s in rows
     ]
 
 
