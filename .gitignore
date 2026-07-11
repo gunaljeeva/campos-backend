@@ -1,0 +1,20 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Env — never commit; use .env.example as the template
+.env
+.env.*
+!.env.example
+
+# Local dev Postgres cluster (portable binaries + data dir)
+.pgdev/
+
+# Runtime error log (stack traces — may contain sensitive data)
+error_log.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
