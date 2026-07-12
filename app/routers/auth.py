@@ -109,7 +109,6 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
         user.password_reset_token_hash = token_hash
         user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         await db.flush()
-        print(f"[dev] password reset token for {user.email}: {raw_token}")
 
     resp = ForgotPasswordResponse(message="If the account exists, a reset link has been sent.")
     if settings.app_env == "development":

@@ -96,6 +96,7 @@ class TeacherCreate(BaseModel):
     department: Optional[str] = None
     qualification: Optional[str] = None
     blood_group: Optional[str] = None
+    dob: Optional[date] = None
 
 
 class TeacherUpdate(BaseModel):
@@ -114,6 +115,7 @@ class TeacherOut(BaseModel):
     department: Optional[str] = None
     qualification: Optional[str] = None
     blood_group: Optional[str] = None
+    dob: Optional[date] = None
     is_active: bool
     created_at: datetime
 

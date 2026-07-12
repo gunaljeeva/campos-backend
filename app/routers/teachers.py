@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID, uuid4
@@ -8,6 +8,7 @@ from app.models.academic import Teacher, Class
 from app.models.core import User, Profile, UserRole
 from app.security import hash_password
 from app.schemas.academic import TeacherCreate, TeacherOut, TeacherUpdate
+from app.services.email import send_welcome_email
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
@@ -48,6 +49,7 @@ async def list_teachers(
 @router.post("", response_model=TeacherOut, status_code=201)
 async def create_teacher(
     body: TeacherCreate,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(require_school_admin),
 ):
@@ -94,12 +96,18 @@ async def create_teacher(
         department=body.department,
         qualification=body.qualification,
         blood_group=body.blood_group,
+        dob=body.dob,
         is_active=True,
     )
     db.add(teacher)
     await db.commit()
     await db.refresh(teacher)
 
+    # Email the new teacher their login (best-effort, after the response).
+    background.add_task(
+        send_welcome_email,
+        to=email, full_name=body.full_name, role="teacher", password=body.password,
+    )
     return teacher
 
 

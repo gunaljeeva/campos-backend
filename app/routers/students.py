@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -9,6 +9,7 @@ from app.auth import get_current_user_id, require_school_admin
 from app.models.academic import Student, Class
 from app.models.core import User, Profile, UserRole, Parent, ParentStudent, School
 from app.security import hash_password
+from app.services.email import send_welcome_email
 from app.schemas.academic import StudentCreateWithParent, StudentOut, StudentUpdate, StudentWithClassOut
 
 router = APIRouter(prefix="/students", tags=["Students"])
@@ -93,6 +94,7 @@ async def get_student(
 @router.post("", response_model=StudentOut, status_code=201)
 async def create_student(
     body: StudentCreateWithParent,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(require_school_admin),
 ):
@@ -127,6 +129,7 @@ async def create_student(
         await db.execute(select(User).where(User.email == parent_email))
     ).scalars().first()
 
+    new_parent_created = False
     if existing_user is not None:
         parent = (
             await db.execute(select(Parent).where(Parent.profile_id == existing_user.id))
@@ -139,6 +142,7 @@ async def create_student(
                 detail="That email already belongs to a non-parent account",
             )
     else:
+        new_parent_created = True
         uid = str(uuid4())
         db.add(User(id=uid, email=parent_email,
                     password_hash=hash_password(body.parent_password), token_version=0))
@@ -169,6 +173,14 @@ async def create_student(
         ))
     await db.flush()
 
+    # Email the parent their login — only when we just created the account
+    # (an existing parent already has their password and doesn't need it again).
+    if new_parent_created:
+        background.add_task(
+            send_welcome_email,
+            to=parent_email, full_name=body.parent_name, role="parent",
+            password=body.parent_password,
+        )
     return student
 
 

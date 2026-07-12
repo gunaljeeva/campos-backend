@@ -54,6 +54,7 @@ class Teacher(Base):
     department: Mapped[str | None] = mapped_column(String)
     qualification: Mapped[str | None] = mapped_column(String)
     blood_group: Mapped[str | None] = mapped_column(String)
+    dob: Mapped[date | None] = mapped_column(Date)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
