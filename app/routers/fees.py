@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from uuid import UUID
+import os, hmac, hashlib, base64, time
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
 from app.models.finance import FeeStructure, Invoice, Payment, TeacherSalary, SchoolExpense
@@ -15,6 +16,8 @@ from app.schemas.finance import (
     TeacherSalaryCreate, TeacherSalaryOut,
     SchoolExpenseCreate, SchoolExpenseOut,
     PaymentWithRefsOut,
+    RazorpayOrderRequest, RazorpayOrderOut,
+    RazorpayVerifyRequest, RazorpayVerifyOut,
 )
 from datetime import datetime
 
@@ -341,3 +344,104 @@ async def list_payments(
         }
         for p in payments
     ]
+
+
+# ── Razorpay ──────────────────────────────────────────────────────────────────
+
+def _razorpay_config():
+    key_id = os.getenv("RAZORPAY_KEY_ID", "")
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
+    live = bool(
+        key_id and key_secret
+        and "placeholder" not in key_id
+        and "your-" not in key_id
+    )
+    return key_id, key_secret, live
+
+
+@router.post("/razorpay/order", response_model=RazorpayOrderOut)
+async def create_razorpay_order(
+    body: RazorpayOrderRequest,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    inv = await db.get(Invoice, body.invoice_id)
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv.status == "paid":
+        raise HTTPException(409, "Invoice is already paid")
+
+    key_id, key_secret, live = _razorpay_config()
+    amount_paise = round(float(inv.amount) * 100)
+
+    if not live:
+        return RazorpayOrderOut(
+            order_id=f"order_DEMO{int(time.time()):X}",
+            amount=amount_paise,
+            currency="INR",
+            key=key_id or "rzp_test_demo",
+            demo=True,
+        )
+
+    import httpx
+    creds = base64.b64encode(f"{key_id}:{key_secret}".encode()).decode()
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            "https://api.razorpay.com/v1/orders",
+            headers={"Authorization": f"Basic {creds}", "Content-Type": "application/json"},
+            json={"amount": amount_paise, "currency": "INR", "receipt": body.invoice_id},
+        )
+    if res.status_code != 200:
+        raise HTTPException(502, f"Razorpay error: {res.text}")
+    order = res.json()
+    return RazorpayOrderOut(
+        order_id=order["id"], amount=order["amount"],
+        currency=order["currency"], key=key_id, demo=False,
+    )
+
+
+@router.post("/razorpay/verify", response_model=RazorpayVerifyOut)
+async def verify_razorpay_payment(
+    body: RazorpayVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    inv = await db.get(Invoice, body.invoice_id)
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv.status == "paid":
+        raise HTTPException(409, "Invoice already paid")
+
+    _, key_secret, live = _razorpay_config()
+
+    if not body.demo and live:
+        expected = hmac.new(
+            key_secret.encode(),
+            f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        if expected != body.razorpay_signature:
+            raise HTTPException(400, "Payment signature verification failed")
+
+    payment_ref = (
+        f"DEMO-{int(time.time()):X}" if body.demo else body.razorpay_payment_id
+    )
+
+    db.add(Payment(
+        invoice_id=body.invoice_id,
+        school_id=inv.school_id,
+        student_id=inv.student_id,
+        razorpay_order_id=body.razorpay_order_id,
+        reference_no=payment_ref,
+        amount=inv.amount,
+        method=body.method or "upi",
+        status="completed",
+        paid_by=str(user_id),
+    ))
+
+    inv.status = "paid"
+    inv.paid_at = datetime.utcnow()
+    inv.payment_ref = payment_ref
+    await db.flush()
+
+    return RazorpayVerifyOut(payment_ref=payment_ref)

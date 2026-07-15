@@ -152,3 +152,25 @@ class TeacherSalaryOut(TeacherSalaryCreate):
 
 class MarkSalaryPaidRequest(BaseModel):
     teacher_salary_id: UUID
+
+
+class RazorpayOrderRequest(BaseModel):
+    invoice_id: str
+
+class RazorpayOrderOut(BaseModel):
+    order_id: str
+    amount: int
+    currency: str
+    key: str
+    demo: bool
+
+class RazorpayVerifyRequest(BaseModel):
+    invoice_id: str
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    method: str | None = None
+    demo: bool = False
+
+class RazorpayVerifyOut(BaseModel):
+    payment_ref: str
