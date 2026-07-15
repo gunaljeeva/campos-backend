@@ -13,7 +13,8 @@ from app.security import (
     create_access_token, create_refresh_token, decode_token,
     generate_reset_token, hash_reset_token,
 )
-from app.models.core import User, Profile, UserRole
+from app.models.core import User, Profile, UserRole, Parent, ParentStudent
+from app.models.academic import Teacher
 from app.schemas.auth import (
     SignupRequest, LoginRequest, TokenPair, RefreshRequest, MeResponse, RoleOut,
     ChangePasswordRequest,
@@ -133,3 +134,102 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     user.password_reset_token_hash = None
     user.password_reset_expires_at = None
     await db.flush()
+
+
+_DEMO_ACCOUNTS = [
+    {"email": "parent@demo.campos.app", "password": "DemoParent!2026",
+     "full_name": "Anita Sharma (Parent)", "role": "parent"},
+    {"email": "teacher@demo.campos.app", "password": "DemoTeacher!2026",
+     "full_name": "Ravi Kumar (Teacher)", "role": "teacher"},
+    {"email": "admin@demo.campos.app", "password": "DemoAdmin!2026",
+     "full_name": "Priya Mehta (Admin)", "role": "school_admin"},
+]
+_DEMO_SCHOOL_ID = "11111111-1111-1111-1111-111111111111"
+_DEMO_STUDENT_IDS = [
+    "66666666-6666-6666-6666-666666666661",
+    "66666666-6666-6666-6666-666666666662",
+]
+_DEMO_TEACHER_ROW_ID = "44444444-4444-4444-4444-444444444441"
+
+
+@router.post("/demo/provision")
+async def provision_demo(db: AsyncSession = Depends(get_db)):
+    """Idempotently create the three demo accounts and wire them to the demo school."""
+    results = []
+    for acc in _DEMO_ACCOUNTS:
+        email = acc["email"]
+        res = await db.execute(select(User).where(User.email == email))
+        user = res.scalars().first()
+        if user is None:
+            uid = str(uuid4())
+            user = User(
+                id=uid,
+                email=email,
+                password_hash=hash_password(acc["password"]),
+                token_version=0,
+            )
+            db.add(user)
+            await db.flush()
+            db.add(Profile(id=user.id, full_name=acc["full_name"]))
+            await db.flush()
+        else:
+            user.password_hash = hash_password(acc["password"])
+            profile = await db.get(Profile, user.id)
+            if profile:
+                profile.full_name = acc["full_name"]
+            await db.flush()
+
+        role_res = await db.execute(
+            select(UserRole).where(
+                UserRole.user_id == user.id,
+                UserRole.role == acc["role"],
+                UserRole.school_id == _DEMO_SCHOOL_ID,
+            )
+        )
+        if not role_res.scalars().first():
+            db.add(UserRole(
+                user_id=user.id,
+                role=acc["role"],
+                school_id=_DEMO_SCHOOL_ID,
+            ))
+            await db.flush()
+
+        if acc["role"] == "parent":
+            parent_res = await db.execute(
+                select(Parent).where(Parent.profile_id == user.id)
+            )
+            parent = parent_res.scalars().first()
+            if parent is None:
+                parent = Parent(profile_id=user.id)
+                db.add(parent)
+                await db.flush()
+            for student_id in _DEMO_STUDENT_IDS:
+                link_res = await db.execute(
+                    select(ParentStudent).where(
+                        ParentStudent.parent_id == parent.id,
+                        ParentStudent.student_id == student_id,
+                    )
+                )
+                if not link_res.scalars().first():
+                    db.add(ParentStudent(
+                        parent_id=parent.id,
+                        student_id=student_id,
+                        school_id=_DEMO_SCHOOL_ID,
+                        is_primary=(student_id == _DEMO_STUDENT_IDS[0]),
+                        relation="guardian",
+                    ))
+            await db.flush()
+
+        if acc["role"] == "teacher":
+            teacher = await db.get(Teacher, _DEMO_TEACHER_ROW_ID)
+            if teacher:
+                teacher.profile_id = user.id
+
+        results.append({
+            "role": acc["role"],
+            "email": acc["email"],
+            "password": acc["password"],
+            "name": acc["full_name"],
+        })
+
+    return {"accounts": results}
