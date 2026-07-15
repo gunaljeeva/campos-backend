@@ -4,12 +4,9 @@ from typing import List
 
 class Settings(BaseSettings):
     database_url: str
-    supabase_jwt_secret: str
     jwt_secret: str = "change-me-local-dev-secret"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
-    supabase_url: str = ""
-    supabase_service_role_key: str = ""
     app_env: str = "development"
     cors_origins: str = "http://localhost:5173"
 
