@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from uuid import UUID
+from datetime import date
 from app.database import get_db
 from app.auth import get_current_user_id
 from app.models.lesson_plan import LessonPlan
@@ -15,21 +16,35 @@ def _dict(lp: LessonPlan, label: str | None) -> dict:
     return {
         "id": lp.id, "school_id": lp.school_id, "class_id": lp.class_id, "class_label": label,
         "subject": lp.subject, "title": lp.title, "plan_date": lp.plan_date,
-        "objectives": lp.objectives, "content": lp.content, "created_at": lp.created_at,
+        "objectives": lp.objectives, "content": lp.content,
+        "teaching_method": lp.teaching_method, "resources": lp.resources,
+        "duration_breakdown": lp.duration_breakdown,
+        "created_at": lp.created_at, "updated_at": lp.updated_at,
     }
 
 
 @router.get("", response_model=list[LessonPlanOut])
 async def list_plans(
     school_id: UUID = Query(...),
+    class_id: UUID | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(get_current_user_id),
 ):
+    filters = [LessonPlan.school_id == str(school_id)]
+    if class_id:
+        filters.append(LessonPlan.class_id == str(class_id))
+    if date_from:
+        filters.append(LessonPlan.plan_date >= date_from)
+    if date_to:
+        filters.append(LessonPlan.plan_date <= date_to)
+
     rows = (
         await db.execute(
             select(LessonPlan, Class.grade, Class.section)
             .join(Class, Class.id == LessonPlan.class_id, isouter=True)
-            .where(LessonPlan.school_id == str(school_id))
+            .where(and_(*filters))
             .order_by(LessonPlan.plan_date.desc().nullslast(), LessonPlan.created_at.desc())
         )
     ).all()
@@ -46,7 +61,10 @@ async def create_plan(
         school_id=str(body.school_id),
         class_id=str(body.class_id) if body.class_id else None,
         subject=body.subject, title=body.title, plan_date=body.plan_date,
-        objectives=body.objectives, content=body.content, created_by=str(user_id),
+        objectives=body.objectives, content=body.content,
+        teaching_method=body.teaching_method, resources=body.resources,
+        duration_breakdown=body.duration_breakdown,
+        created_by=str(user_id),
     )
     db.add(lp)
     await db.flush()
