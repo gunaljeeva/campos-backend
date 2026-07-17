@@ -18,6 +18,8 @@ class FeeStructure(Base):
     term: Mapped[str | None] = mapped_column(String)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date)
+    late_fee_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    grace_days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -37,6 +39,9 @@ class Invoice(Base):
     status: Mapped[str] = mapped_column(String, default="pending")
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payment_ref: Mapped[str | None] = mapped_column(Text)
+    remarks: Mapped[str | None] = mapped_column(Text)
+    discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    discount_reason: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     student: Mapped["Student"] = relationship()

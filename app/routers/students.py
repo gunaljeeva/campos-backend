@@ -107,6 +107,16 @@ async def create_student(
     school_id = str(body.school_id)
     parent_email = body.parent_email.strip().lower()
 
+    # Guard: admission number must be unique within the school.
+    dup_adm = (await db.execute(
+        select(Student).where(
+            Student.school_id == school_id,
+            Student.admission_no == body.admission_no,
+        )
+    )).scalars().first()
+    if dup_adm:
+        raise HTTPException(status_code=409, detail=f"Admission number '{body.admission_no}' is already in use")
+
     # 1. Create the student.
     student_fields = {
         "school_id": school_id,
@@ -119,6 +129,10 @@ async def create_student(
         "home_lat": body.home_lat,
         "home_lng": body.home_lng,
         "home_address": body.home_address,
+        "aadhaar_no": body.aadhaar_no,
+        "category": body.category,
+        "emergency_contact": body.emergency_contact,
+        "allergy_notes": body.allergy_notes,
     }
     student = Student(**student_fields)
     db.add(student)

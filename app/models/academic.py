@@ -15,6 +15,9 @@ class Class(Base):
     grade: Mapped[str] = mapped_column(String, nullable=False)
     section: Mapped[str] = mapped_column(String, nullable=False)
     homeroom_teacher_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("teachers.id", ondelete="SET NULL"))
+    room_number: Mapped[str | None] = mapped_column(String)
+    capacity: Mapped[int | None] = mapped_column(Integer)
+    academic_year: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     school: Mapped["School"] = relationship(back_populates="classes")
@@ -37,6 +40,10 @@ class Student(Base):
     home_lat: Mapped[float | None] = mapped_column()
     home_lng: Mapped[float | None] = mapped_column()
     home_address: Mapped[str | None] = mapped_column(Text)
+    aadhaar_no: Mapped[str | None] = mapped_column(String)
+    category: Mapped[str | None] = mapped_column(String)
+    emergency_contact: Mapped[str | None] = mapped_column(String)
+    allergy_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     school: Mapped["School"] = relationship(back_populates="students")
@@ -55,6 +62,10 @@ class Teacher(Base):
     qualification: Mapped[str | None] = mapped_column(String)
     blood_group: Mapped[str | None] = mapped_column(String)
     dob: Mapped[date | None] = mapped_column(Date)
+    phone: Mapped[str | None] = mapped_column(String)
+    address: Mapped[str | None] = mapped_column(Text)
+    joining_date: Mapped[date | None] = mapped_column(Date)
+    emergency_contact: Mapped[str | None] = mapped_column(String)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

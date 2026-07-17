@@ -49,6 +49,16 @@ async def create_class(
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(require_school_admin),
 ):
+    dup = (await db.execute(
+        select(Class).where(
+            Class.school_id == str(body.school_id),
+            Class.grade == body.grade,
+            Class.section == body.section,
+        )
+    )).scalars().first()
+    if dup:
+        raise HTTPException(409, f"Grade {body.grade}-{body.section} already exists")
+
     payload = {k: str(v) if isinstance(v, UUID) else v for k, v in body.model_dump().items()}
     cls = Class(**payload)
     db.add(cls)

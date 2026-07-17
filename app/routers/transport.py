@@ -215,6 +215,128 @@ async def list_maintenance(
     ]
 
 
+@router.get("/student-assignments")
+async def list_student_bus_assignments(
+    school_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    from app.models.academic import Student as StudentModel
+    rows = (await db.execute(
+        select(StudentBusAssignment)
+        .where(StudentBusAssignment.school_id == str(school_id))
+        .order_by(StudentBusAssignment.created_at.desc())
+    )).scalars().all()
+    out = []
+    for a in rows:
+        route = await db.get(BusRoute, a.route_id) if a.route_id else None
+        stop = await db.get(BusStop, a.stop_id) if a.stop_id else None
+        student = await db.get(StudentModel, a.student_id) if a.student_id else None
+        out.append({
+            "id": a.id, "student_id": a.student_id,
+            "student_name": student.full_name if student else None,
+            "route_id": a.route_id,
+            "route_name": route.route_name if route else None,
+            "stop_id": a.stop_id,
+            "stop_name": stop.name if stop else None,
+            "stop_pickup_time": str(stop.pickup_time) if stop and stop.pickup_time else None,
+            "created_at": a.created_at,
+        })
+    return out
+
+
+@router.post("/student-assignments", status_code=201)
+async def create_student_bus_assignment(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    from app.models.academic import Student as StudentModel
+    school_id = body.get("school_id")
+    student_id = body.get("student_id")
+    route_id = body.get("route_id")
+    stop_id = body.get("stop_id")
+
+    existing = (await db.execute(
+        select(StudentBusAssignment)
+        .where(
+            StudentBusAssignment.student_id == str(student_id),
+            StudentBusAssignment.school_id == str(school_id),
+        )
+    )).scalar_one_or_none()
+    if existing:
+        existing.route_id = str(route_id) if route_id else existing.route_id
+        existing.stop_id = str(stop_id) if stop_id else None
+        await db.flush()
+        a = existing
+    else:
+        a = StudentBusAssignment(
+            school_id=str(school_id), student_id=str(student_id),
+            route_id=str(route_id), stop_id=str(stop_id) if stop_id else None,
+        )
+        db.add(a)
+        await db.flush()
+
+    route = await db.get(BusRoute, a.route_id) if a.route_id else None
+    stop = await db.get(BusStop, a.stop_id) if a.stop_id else None
+    student = await db.get(StudentModel, a.student_id)
+    return {
+        "id": a.id, "student_id": a.student_id,
+        "student_name": student.full_name if student else None,
+        "route_id": a.route_id,
+        "route_name": route.route_name if route else None,
+        "stop_id": a.stop_id,
+        "stop_name": stop.name if stop else None,
+        "stop_pickup_time": str(stop.pickup_time) if stop and stop.pickup_time else None,
+        "created_at": a.created_at,
+    }
+
+
+@router.delete("/student-assignments/{assignment_id}", status_code=204)
+async def delete_student_bus_assignment(
+    assignment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    a = await db.get(StudentBusAssignment, str(assignment_id))
+    if a:
+        await db.delete(a)
+
+
+@router.get("/student-assignment")
+async def get_student_bus_assignment(
+    student_id: UUID = Query(...),
+    school_id: UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    assignment = (await db.execute(
+        select(StudentBusAssignment)
+        .where(
+            StudentBusAssignment.student_id == str(student_id),
+            StudentBusAssignment.school_id == str(school_id),
+        )
+    )).scalar_one_or_none()
+
+    if not assignment:
+        return {"assigned": False}
+
+    route = await db.get(BusRoute, assignment.route_id) if assignment.route_id else None
+    stop = await db.get(BusStop, assignment.stop_id) if assignment.stop_id else None
+    bus = await db.get(Bus, route.bus_id) if route and route.bus_id else None
+
+    return {
+        "assigned": True,
+        "route_name": route.route_name if route else None,
+        "stop_name": stop.name if stop else None,
+        "stop_pickup_time": str(stop.pickup_time) if stop and stop.pickup_time else None,
+        "reg_no": bus.reg_no if bus else None,
+        "driver_name": bus.driver_name if bus else None,
+        "driver_phone": bus.driver_phone if bus else None,
+        "is_active": bus.is_active if bus else None,
+    }
+
+
 @router.post("/maintenance", response_model=MaintOut, status_code=201)
 async def create_maintenance(
     body: MaintCreate,

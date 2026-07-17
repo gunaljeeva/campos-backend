@@ -13,8 +13,8 @@ from app.security import (
     create_access_token, create_refresh_token, decode_token,
     generate_reset_token, hash_reset_token,
 )
-from app.models.core import User, Profile, UserRole, Parent, ParentStudent
-from app.models.academic import Teacher
+from app.models.core import User, Profile, UserRole, Parent, ParentStudent, School
+from app.models.academic import Teacher, Student
 from app.schemas.auth import (
     SignupRequest, LoginRequest, TokenPair, RefreshRequest, MeResponse, RoleOut,
     ChangePasswordRequest,
@@ -155,6 +155,25 @@ _DEMO_TEACHER_ROW_ID = "44444444-4444-4444-4444-444444444441"
 @router.post("/demo/provision")
 async def provision_demo(db: AsyncSession = Depends(get_db)):
     """Idempotently create the three demo accounts and wire them to the demo school."""
+
+    # 0. Ensure demo school exists.
+    school = await db.get(School, _DEMO_SCHOOL_ID)
+    if school is None:
+        db.add(School(id=_DEMO_SCHOOL_ID, name="Demo School", city="Delhi", board="CBSE"))
+        await db.flush()
+
+    # 0b. Ensure demo students exist (parent link references them).
+    for i, student_id in enumerate(_DEMO_STUDENT_IDS, start=1):
+        student = await db.get(Student, student_id)
+        if student is None:
+            db.add(Student(
+                id=student_id,
+                school_id=_DEMO_SCHOOL_ID,
+                full_name=f"Demo Student {i}",
+                admission_no=f"DEMO-{i:03d}",
+            ))
+    await db.flush()
+
     results = []
     for acc in _DEMO_ACCOUNTS:
         email = acc["email"]

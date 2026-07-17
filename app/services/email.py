@@ -31,6 +31,17 @@ def send_email(to: str, subject: str, body: str) -> None:
         pass
 
 
+def send_deactivation_email(*, to: str, full_name: str) -> None:
+    """Notify a teacher that their account has been deactivated."""
+    body = (
+        f"Hi {full_name},\n\n"
+        f"Your CampOS Teacher account has been deactivated by the school administrator.\n\n"
+        f"If you believe this is a mistake, please contact your school admin.\n\n"
+        f"— CampOS"
+    )
+    send_email(to, "Your CampOS account has been deactivated", body)
+
+
 def send_welcome_email(*, to: str, full_name: str, role: str, password: str) -> None:
     """Welcome a newly-provisioned user with their login details."""
     login_url = f"{settings.app_base_url}/login"

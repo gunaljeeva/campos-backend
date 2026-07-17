@@ -50,9 +50,21 @@ async def create_invite(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(require_school_admin),
 ):
+    email = body.email.strip().lower()
+    existing = (await db.execute(
+        select(Invite).where(
+            Invite.school_id == str(body.school_id),
+            Invite.email == email,
+            Invite.role == body.role,
+            Invite.status == "pending",
+        )
+    )).scalars().first()
+    if existing:
+        raise HTTPException(409, f"A pending invite for {email} ({body.role}) already exists")
+
     invite = Invite(
         school_id=str(body.school_id),
-        email=body.email.strip().lower(),
+        email=email,
         role=body.role,
         token=uuid4().hex,
         invited_by=str(user_id),

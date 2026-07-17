@@ -15,6 +15,10 @@ class StudentCreate(BaseModel):
     home_lat: Optional[float] = None
     home_lng: Optional[float] = None
     home_address: Optional[str] = None
+    aadhaar_no: Optional[str] = None
+    category: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    allergy_notes: Optional[str] = None
 
 
 class StudentCreateWithParent(StudentCreate):
@@ -35,6 +39,10 @@ class StudentUpdate(BaseModel):
     home_lat: Optional[float] = None
     home_lng: Optional[float] = None
     home_address: Optional[str] = None
+    aadhaar_no: Optional[str] = None
+    category: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    allergy_notes: Optional[str] = None
 
 
 class StudentOut(StudentCreate):
@@ -59,12 +67,18 @@ class ClassCreate(BaseModel):
     grade: str
     section: str
     homeroom_teacher_id: Optional[UUID] = None
+    room_number: Optional[str] = None
+    capacity: Optional[int] = None
+    academic_year: Optional[str] = None
 
 
 class ClassUpdate(BaseModel):
     grade: Optional[str] = None
     section: Optional[str] = None
     homeroom_teacher_id: Optional[UUID] = None
+    room_number: Optional[str] = None
+    capacity: Optional[int] = None
+    academic_year: Optional[str] = None
 
 
 class ClassOut(ClassCreate):
@@ -97,6 +111,10 @@ class TeacherCreate(BaseModel):
     qualification: Optional[str] = None
     blood_group: Optional[str] = None
     dob: Optional[date] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    joining_date: Optional[date] = None
+    emergency_contact: Optional[str] = None
 
 
 class TeacherUpdate(BaseModel):
@@ -105,6 +123,10 @@ class TeacherUpdate(BaseModel):
     qualification: Optional[str] = None
     blood_group: Optional[str] = None
     is_active: Optional[bool] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    joining_date: Optional[date] = None
+    emergency_contact: Optional[str] = None
 
 
 class TeacherOut(BaseModel):
@@ -116,6 +138,10 @@ class TeacherOut(BaseModel):
     qualification: Optional[str] = None
     blood_group: Optional[str] = None
     dob: Optional[date] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    joining_date: Optional[date] = None
+    emergency_contact: Optional[str] = None
     is_active: bool
     created_at: datetime
 

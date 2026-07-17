@@ -8,7 +8,7 @@ from app.models.academic import Teacher, Class
 from app.models.core import User, Profile, UserRole
 from app.security import hash_password
 from app.schemas.academic import TeacherCreate, TeacherOut, TeacherUpdate
-from app.services.email import send_welcome_email
+from app.services.email import send_welcome_email, send_deactivation_email
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
@@ -39,6 +39,10 @@ async def list_teachers(
             "qualification": t.qualification,
             "is_active": t.is_active,
             "blood_group": t.blood_group,
+            "phone": t.phone,
+            "address": t.address,
+            "joining_date": t.joining_date,
+            "emergency_contact": t.emergency_contact,
             "profiles": {"full_name": name} if name else None,
             "classes": {"grade": grade, "section": section} if grade else None,
         }
@@ -59,6 +63,17 @@ async def create_teacher(
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalars().first():
         raise HTTPException(status_code=409, detail="Email already registered")
+
+    # Check if employee code is already used in this school
+    if body.employee_code:
+        dup_code = (await db.execute(
+            select(Teacher).where(
+                Teacher.school_id == str(body.school_id),
+                Teacher.employee_code == body.employee_code,
+            )
+        )).scalars().first()
+        if dup_code:
+            raise HTTPException(status_code=409, detail=f"Employee code '{body.employee_code}' is already in use")
 
     # Create User
     uid = str(uuid4())
@@ -97,6 +112,10 @@ async def create_teacher(
         qualification=body.qualification,
         blood_group=body.blood_group,
         dob=body.dob,
+        phone=body.phone,
+        address=body.address,
+        joining_date=body.joining_date,
+        emergency_contact=body.emergency_contact,
         is_active=True,
     )
     db.add(teacher)
@@ -115,6 +134,7 @@ async def create_teacher(
 async def update_teacher(
     teacher_id: UUID,
     body: TeacherUpdate,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: UUID = Depends(require_school_admin),
 ):
@@ -122,6 +142,22 @@ async def update_teacher(
     teacher = await db.get(Teacher, str(teacher_id))
     if not teacher:
         raise HTTPException(404, "Teacher not found")
+
+    was_active = teacher.is_active
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(teacher, field, value)
+    await db.commit()
+    await db.refresh(teacher)
+
+    # Send deactivation email when toggling active → inactive.
+    if was_active and not teacher.is_active:
+        profile = await db.get(Profile, teacher.profile_id)
+        user = await db.get(User, teacher.profile_id)
+        if profile and user:
+            background.add_task(
+                send_deactivation_email,
+                to=user.email,
+                full_name=profile.full_name or user.email,
+            )
+
     return teacher

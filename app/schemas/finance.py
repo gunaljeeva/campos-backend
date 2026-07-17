@@ -15,6 +15,8 @@ class FeeStructureCreate(BaseModel):
     term: Optional[str] = None
     amount: Decimal
     due_date: Optional[date] = None
+    late_fee_amount: Optional[Decimal] = None
+    grace_days: Optional[int] = None
 
 
 class FeeStructureOut(FeeStructureCreate):
@@ -30,6 +32,8 @@ class FeeStructureUpdate(BaseModel):
     term: Optional[str] = None
     amount: Optional[Decimal] = None
     due_date: Optional[date] = None
+    late_fee_amount: Optional[Decimal] = None
+    grace_days: Optional[int] = None
 
 
 class InvoiceCreate(BaseModel):
@@ -39,12 +43,18 @@ class InvoiceCreate(BaseModel):
     label: str
     amount: Decimal
     due_date: Optional[date] = None
+    remarks: Optional[str] = None
+    discount_amount: Optional[Decimal] = None
+    discount_reason: Optional[str] = None
 
 
 class InvoiceUpdate(BaseModel):
     status: Optional[InvoiceStatus] = None
     amount: Optional[Decimal] = None
     due_date: Optional[date] = None
+    remarks: Optional[str] = None
+    discount_amount: Optional[Decimal] = None
+    discount_reason: Optional[str] = None
 
 
 class InvoiceOut(InvoiceCreate):
