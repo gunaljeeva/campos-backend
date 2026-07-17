@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import uuid4, UUID
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date as date_type
 from jose import JWTError
 
 from app.config import settings
@@ -14,7 +14,10 @@ from app.security import (
     generate_reset_token, hash_reset_token,
 )
 from app.models.core import User, Profile, UserRole, Parent, ParentStudent, School
-from app.models.academic import Teacher, Student
+from app.models.academic import Teacher, Student, Class, Homework
+from app.models.operations import Attendance
+from app.models.finance import Invoice, FeeStructure
+from app.models.timetable import TimetableSlot
 from app.schemas.auth import (
     SignupRequest, LoginRequest, TokenPair, RefreshRequest, MeResponse, RoleOut,
     ChangePasswordRequest,
@@ -144,12 +147,33 @@ _DEMO_ACCOUNTS = [
     {"email": "admin@demo.campos.app", "password": "DemoAdmin!2026",
      "full_name": "Priya Mehta (Admin)", "role": "school_admin"},
 ]
-_DEMO_SCHOOL_ID = "11111111-1111-1111-1111-111111111111"
-_DEMO_STUDENT_IDS = [
+_DEMO_SCHOOL_ID    = "11111111-1111-1111-1111-111111111111"
+_DEMO_CLASS_ID     = "11111111-1111-1111-1111-111111111cc1"
+_DEMO_STUDENT_IDS  = [
     "66666666-6666-6666-6666-666666666661",
     "66666666-6666-6666-6666-666666666662",
 ]
 _DEMO_TEACHER_ROW_ID = "44444444-4444-4444-4444-444444444441"
+
+_DEMO_TIMETABLE = [
+    # (day 1-5, period 1-6, subject)
+    (1, 1, "Mathematics"), (1, 2, "Science"), (1, 3, "English"),
+    (1, 4, "Hindi"), (1, 5, "Social Studies"), (1, 6, "Computer"),
+    (2, 1, "English"), (2, 2, "Mathematics"), (2, 3, "Science"),
+    (2, 4, "Computer"), (2, 5, "Hindi"), (2, 6, "Social Studies"),
+    (3, 1, "Science"), (3, 2, "Hindi"), (3, 3, "Mathematics"),
+    (3, 4, "Social Studies"), (3, 5, "Computer"), (3, 6, "English"),
+    (4, 1, "Hindi"), (4, 2, "Social Studies"), (4, 3, "Computer"),
+    (4, 4, "English"), (4, 5, "Mathematics"), (4, 6, "Science"),
+    (5, 1, "Computer"), (5, 2, "English"), (5, 3, "Social Studies"),
+    (5, 4, "Science"), (5, 5, "Hindi"), (5, 6, "Mathematics"),
+]
+
+_DEMO_HOMEWORK = [
+    ("Mathematics", "Chapter 5 — Quadratic Equations", "Solve exercise 5.3 Q1-Q10", 3),
+    ("Science", "Light and Reflection", "Draw a ray diagram for a concave mirror and label parts", 5),
+    ("English", "Essay Writing", "Write a 200-word essay on 'My Favourite Season'", 7),
+]
 
 
 @router.post("/demo/provision")
@@ -175,6 +199,7 @@ async def provision_demo(db: AsyncSession = Depends(get_db)):
     await db.flush()
 
     results = []
+    teacher_user_id: str = ""
     for acc in _DEMO_ACCOUNTS:
         email = acc["email"]
         res = await db.execute(select(User).where(User.email == email))
@@ -243,6 +268,7 @@ async def provision_demo(db: AsyncSession = Depends(get_db)):
             teacher = await db.get(Teacher, _DEMO_TEACHER_ROW_ID)
             if teacher:
                 teacher.profile_id = user.id
+            teacher_user_id = user.id
 
         results.append({
             "role": acc["role"],
@@ -250,5 +276,115 @@ async def provision_demo(db: AsyncSession = Depends(get_db)):
             "password": acc["password"],
             "name": acc["full_name"],
         })
+
+    # ------------------------------------------------------------------ #
+    # Rich demo data — class, timetable, attendance, homework, invoices   #
+    # ------------------------------------------------------------------ #
+
+    # 1. Demo class
+    demo_class = await db.get(Class, _DEMO_CLASS_ID)
+    if demo_class is None:
+        db.add(Class(id=_DEMO_CLASS_ID, school_id=_DEMO_SCHOOL_ID, grade="10", section="A"))
+        await db.flush()
+
+    # 2. Link students to the demo class
+    for sid in _DEMO_STUDENT_IDS:
+        s = await db.get(Student, sid)
+        if s and s.class_id != _DEMO_CLASS_ID:
+            s.class_id = _DEMO_CLASS_ID
+    await db.flush()
+
+    # 3. Link teacher row to demo class (homeroom)
+    demo_class = await db.get(Class, _DEMO_CLASS_ID)
+    if demo_class and demo_class.homeroom_teacher_id is None:
+        demo_class.homeroom_teacher_id = _DEMO_TEACHER_ROW_ID
+    await db.flush()
+
+    # 4. Timetable slots
+    for day, period, subject in _DEMO_TIMETABLE:
+        existing = await db.execute(
+            select(TimetableSlot).where(
+                TimetableSlot.class_id == _DEMO_CLASS_ID,
+                TimetableSlot.day == day,
+                TimetableSlot.period == period,
+            )
+        )
+        if not existing.scalars().first():
+            db.add(TimetableSlot(
+                school_id=_DEMO_SCHOOL_ID, class_id=_DEMO_CLASS_ID,
+                day=day, period=period, subject=subject, teacher_name="Ravi Kumar",
+            ))
+    await db.flush()
+
+    # 5. Attendance for last 14 weekdays (mostly present, one absence per student)
+    today = date_type.today()
+    weekdays_seen = 0
+    att_day = today
+    absent_on: dict[str, date_type] = {
+        _DEMO_STUDENT_IDS[0]: today - timedelta(days=4),
+        _DEMO_STUDENT_IDS[1]: today - timedelta(days=9),
+    }
+    while weekdays_seen < 14:
+        if att_day.weekday() < 5:  # Mon–Fri
+            weekdays_seen += 1
+            for sid in _DEMO_STUDENT_IDS:
+                existing = await db.execute(
+                    select(Attendance).where(
+                        Attendance.student_id == sid,
+                        Attendance.date == att_day,
+                    )
+                )
+                if not existing.scalars().first():
+                    status = "absent" if att_day == absent_on.get(sid) else "present"
+                    db.add(Attendance(
+                        school_id=_DEMO_SCHOOL_ID, class_id=_DEMO_CLASS_ID,
+                        student_id=sid, date=att_day, status=status,
+                        marked_by=teacher_user_id,
+                    ))
+        att_day -= timedelta(days=1)
+    await db.flush()
+
+    # 6. Homework assignments
+    for subject, title, description, days_ahead in _DEMO_HOMEWORK:
+        existing = await db.execute(
+            select(Homework).where(
+                Homework.class_id == _DEMO_CLASS_ID,
+                Homework.title == title,
+            )
+        )
+        if not existing.scalars().first():
+            db.add(Homework(
+                school_id=_DEMO_SCHOOL_ID, class_id=_DEMO_CLASS_ID,
+                subject=subject, title=title, description=description,
+                due_date=today + timedelta(days=days_ahead),
+                created_by=teacher_user_id,
+            ))
+    await db.flush()
+
+    # 7. Fee invoices (one paid, one pending per student)
+    fee_labels = [
+        ("Term 1 Tuition Fee", 12000, "paid"),
+        ("Term 2 Tuition Fee", 12000, "pending"),
+    ]
+    for sid in _DEMO_STUDENT_IDS:
+        for label, amount, status in fee_labels:
+            existing = await db.execute(
+                select(Invoice).where(
+                    Invoice.student_id == sid,
+                    Invoice.label == label,
+                )
+            )
+            if not existing.scalars().first():
+                inv = Invoice(
+                    school_id=_DEMO_SCHOOL_ID, student_id=sid,
+                    label=label, amount=amount,
+                    due_date=today + timedelta(days=30 if status == "pending" else -30),
+                    status=status,
+                )
+                if status == "paid":
+                    inv.paid_at = datetime.now(timezone.utc) - timedelta(days=25)
+                    inv.payment_ref = "DEMO-PAY-001"
+                db.add(inv)
+    await db.flush()
 
     return {"accounts": results}
