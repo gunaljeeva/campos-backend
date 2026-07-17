@@ -29,6 +29,7 @@ from app.models.staff_timesheet import StaffTimesheet
 from app.models.bus_fee import BusFee
 from app.models.qr_attendance import QRToken
 from app.models.school_setting import SchoolSetting
+from app.models.timetable import TimetableSlot
 
 __all__ = [
     "User", "School", "Profile", "UserRole", "Parent", "ParentStudent",
@@ -50,4 +51,5 @@ __all__ = [
     "ExamSchedule",
     "FeeDiscount", "FeeInstallment",
     "TeacherRating", "StaffTimesheet", "BusFee", "QRToken", "SchoolSetting",
+    "TimetableSlot",
 ]

@@ -5,6 +5,7 @@ from app.routers import auth, schools, students, attendance, fees, leave, meetin
 from app.routers import library, inventory, behaviour, alumni, calendar_event
 from app.routers import scholarship, canteen, sports, hostel, front_office, teachers, examination, lesson_plan, assessment, academic_setup, report, communicate, certificate, exam_schedule, fee_plan, teacher_rating, staff_timesheet, bus_fee, qr_attendance, school_setting
 from app.routers import notifications, invites
+from app.routers import timetable
 
 app = FastAPI(
     title="CampOS API",
@@ -69,6 +70,7 @@ app.include_router(qr_attendance.router)
 app.include_router(school_setting.router)
 app.include_router(notifications.router)
 app.include_router(invites.router)
+app.include_router(timetable.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
