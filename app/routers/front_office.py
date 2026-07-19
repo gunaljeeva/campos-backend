@@ -106,7 +106,6 @@ async def list_enquiries(
 async def create_enquiry(
     body: AdmissionEnquiryCreate,
     db: AsyncSession = Depends(get_db),
-    _: UUID = Depends(get_current_user_id),
 ):
     data = body.model_dump()
     data["school_id"] = str(data["school_id"])
