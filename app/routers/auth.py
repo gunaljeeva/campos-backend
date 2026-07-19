@@ -266,8 +266,11 @@ async def provision_demo(db: AsyncSession = Depends(get_db)):
 
         if acc["role"] == "teacher":
             teacher = await db.get(Teacher, _DEMO_TEACHER_ROW_ID)
-            if teacher:
+            if teacher is None:
+                db.add(Teacher(id=_DEMO_TEACHER_ROW_ID, school_id=_DEMO_SCHOOL_ID, profile_id=user.id, is_active=True))
+            else:
                 teacher.profile_id = user.id
+            await db.flush()
             teacher_user_id = user.id
 
         results.append({

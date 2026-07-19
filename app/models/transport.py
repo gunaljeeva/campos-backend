@@ -1,5 +1,5 @@
 # Phase 7a — Transport: buses, bus_routes, bus_stops, bus_maintenance, student_bus_assignments
-from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey, Date, Integer, Numeric, CheckConstraint, Time
+from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey, Date, Integer, Numeric, CheckConstraint, Time, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, date, time
@@ -83,3 +83,15 @@ class StudentBusAssignment(Base):
     route_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("bus_routes.id", ondelete="CASCADE"), nullable=False)
     stop_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("bus_stops.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class BusLiveLocation(Base):
+    __tablename__ = "bus_live_locations"
+    __table_args__ = (UniqueConstraint("bus_id", name="uq_bus_live_location"),)
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    bus_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("buses.id", ondelete="CASCADE"), nullable=False)
+    lat: Mapped[Decimal] = mapped_column(Numeric(10, 7), nullable=False)
+    lng: Mapped[Decimal] = mapped_column(Numeric(10, 7), nullable=False)
+    speed_kmh: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

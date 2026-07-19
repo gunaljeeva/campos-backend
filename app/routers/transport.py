@@ -4,7 +4,9 @@ from sqlalchemy import select
 from uuid import UUID
 from app.database import get_db
 from app.auth import get_current_user_id
-from app.models.transport import Bus, BusRoute, BusStop, BusMaintenance, StudentBusAssignment
+from app.models.transport import Bus, BusRoute, BusStop, BusMaintenance, StudentBusAssignment, BusLiveLocation
+from pydantic import BaseModel
+from datetime import datetime
 from app.schemas.transport import (
     BusCreate, BusUpdate, BusActive, BusOut,
     RouteCreate, RouteIdOut, RouteOut,
@@ -327,6 +329,7 @@ async def get_student_bus_assignment(
 
     return {
         "assigned": True,
+        "bus_id": bus.id if bus else None,
         "route_name": route.route_name if route else None,
         "stop_name": stop.name if stop else None,
         "stop_pickup_time": str(stop.pickup_time) if stop and stop.pickup_time else None,
@@ -364,3 +367,52 @@ async def create_maintenance(
         "created_at": entry.created_at,
         "buses": {"reg_no": bus.reg_no} if bus else None,
     }
+
+
+# ── Live GPS Location ──────────────────────────────────────────────────────────
+
+class LocationUpdate(BaseModel):
+    lat: float
+    lng: float
+    speed_kmh: float | None = None
+
+
+@router.post("/buses/{bus_id}/location", status_code=200)
+async def update_bus_location(
+    bus_id: UUID,
+    body: LocationUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    """Driver calls this to broadcast their current GPS position."""
+    existing = (await db.execute(
+        select(BusLiveLocation).where(BusLiveLocation.bus_id == str(bus_id))
+    )).scalar_one_or_none()
+
+    if existing:
+        existing.lat = body.lat
+        existing.lng = body.lng
+        existing.speed_kmh = body.speed_kmh
+        existing.updated_at = datetime.utcnow()
+    else:
+        existing = BusLiveLocation(
+            bus_id=str(bus_id), lat=body.lat, lng=body.lng, speed_kmh=body.speed_kmh,
+        )
+        db.add(existing)
+    await db.flush()
+    return {"bus_id": str(bus_id), "lat": float(existing.lat), "lng": float(existing.lng), "updated_at": existing.updated_at}
+
+
+@router.get("/buses/{bus_id}/location")
+async def get_bus_location(
+    bus_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    """Parents poll this to get the live bus position."""
+    loc = (await db.execute(
+        select(BusLiveLocation).where(BusLiveLocation.bus_id == str(bus_id))
+    )).scalar_one_or_none()
+    if not loc:
+        return {"bus_id": str(bus_id), "lat": None, "lng": None, "updated_at": None}
+    return {"bus_id": str(bus_id), "lat": float(loc.lat), "lng": float(loc.lng), "speed_kmh": float(loc.speed_kmh) if loc.speed_kmh else None, "updated_at": loc.updated_at}
