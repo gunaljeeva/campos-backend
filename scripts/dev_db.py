@@ -73,6 +73,7 @@ def main() -> None:
         s.add(Profile(id=ADMIN_ID, full_name="Dev Admin"))
         s.add(Profile(id=TEACHER_PROFILE_ID, full_name="Asha Sharma"))
         s.add(UserRole(user_id=ADMIN_ID, role="school_admin", school_id=SCHOOL_ID))
+        s.add(UserRole(user_id=TEACHER_PROFILE_ID, role="teacher", school_id=SCHOOL_ID))
         s.add(Teacher(
             id=TEACHER_ID, school_id=SCHOOL_ID, profile_id=TEACHER_PROFILE_ID,
             employee_code="TCH001", department="Science", is_active=True,
