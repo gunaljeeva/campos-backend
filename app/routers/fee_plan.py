@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from uuid import UUID
 from datetime import date, timedelta, datetime
 from decimal import Decimal, ROUND_HALF_UP
+from pydantic import BaseModel
 from app.database import get_db
 from app.auth import get_current_user_id
 from app.models.fee_plan import FeeDiscount, FeeInstallment
@@ -166,6 +167,60 @@ async def pay_installment(
     inst.paid_at = datetime.utcnow()
     await db.flush()
     return await _inst_out(db, inst)
+
+
+class SendRemindersIn(BaseModel):
+    school_id: UUID
+    days_before: int = 7
+
+
+@router.post("/installments/send-reminders")
+async def send_fee_reminders(
+    body: SendRemindersIn,
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(get_current_user_id),
+):
+    """Create immediate fee reminder notifications for pending installments due within N days."""
+    today = date.today()
+    cutoff = today + timedelta(days=body.days_before)
+    rows = (await db.execute(
+        select(FeeInstallment).where(
+            and_(
+                FeeInstallment.school_id == str(body.school_id),
+                FeeInstallment.status == "pending",
+                FeeInstallment.due_date >= today,
+                FeeInstallment.due_date <= cutoff,
+            )
+        )
+    )).scalars().all()
+
+    sent = 0
+    for inst in rows:
+        student = await db.get(Student, inst.student_id)
+        if not student:
+            continue
+        ps = (await db.execute(
+            select(ParentStudent).where(ParentStudent.student_id == student.id)
+        )).scalars().first()
+        if not ps:
+            continue
+        parent = await db.get(Parent, ps.parent_id)
+        if not parent:
+            continue
+        db.add(Notification(
+            school_id=str(body.school_id),
+            user_id=parent.profile_id,
+            title=f"Fee due: {inst.plan_label} #{inst.installment_no}",
+            body=(
+                f"Instalment {inst.installment_no} for {student.full_name} "
+                f"(₹{float(inst.amount):,.2f}) is due on {inst.due_date.strftime('%d %b %Y')}."
+            ),
+            category="fee_reminder",
+        ))
+        sent += 1
+
+    await db.flush()
+    return {"sent": sent}
 
 
 @router.delete("/installments/{installment_id}", status_code=204)
