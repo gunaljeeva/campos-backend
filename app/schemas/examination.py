@@ -7,6 +7,7 @@ from uuid import UUID
 class ExamCreate(BaseModel):
     school_id: UUID
     name: str
+    session: str                        # FN | AN — mandatory
     exam_type: Optional[str] = None
     class_id: Optional[UUID] = None
     max_marks: int = 100
@@ -16,6 +17,7 @@ class ExamCreate(BaseModel):
 
 class ExamUpdate(BaseModel):
     name: Optional[str] = None
+    session: Optional[str] = None
     exam_type: Optional[str] = None
     class_id: Optional[UUID] = None
     max_marks: Optional[int] = None
@@ -27,6 +29,7 @@ class ExamOut(BaseModel):
     id: UUID
     school_id: UUID
     name: str
+    session: Optional[str] = None
     exam_type: Optional[str] = None
     class_id: Optional[UUID] = None
     class_label: Optional[str] = None

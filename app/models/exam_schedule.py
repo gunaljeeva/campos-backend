@@ -19,4 +19,5 @@ class ExamSchedule(Base):
     end_time: Mapped[time | None] = mapped_column(Time)
     room: Mapped[str | None] = mapped_column(String)
     max_marks: Mapped[int | None] = mapped_column(Integer)
+    grade: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

@@ -13,6 +13,7 @@ class SettingUpdate(BaseModel):
     whatsapp_api_key: Optional[str] = None
     session_timeout_minutes: Optional[int] = None
     password_min_length: Optional[int] = None
+    library_fine_per_day: Optional[float] = None
 
 
 class SettingOut(BaseModel):
@@ -27,3 +28,4 @@ class SettingOut(BaseModel):
     whatsapp_key_set: bool = False
     session_timeout_minutes: int
     password_min_length: int
+    library_fine_per_day: float = 5.0

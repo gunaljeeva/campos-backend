@@ -35,5 +35,6 @@ class LibraryLoan(Base):
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     return_date: Mapped[date | None] = mapped_column(Date)
     fine_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    fine_per_day: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(String, default="issued")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

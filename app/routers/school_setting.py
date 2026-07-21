@@ -22,6 +22,7 @@ def _out(s: SchoolSetting) -> SettingOut:
         whatsapp_key_set=bool(s.whatsapp_api_key),
         session_timeout_minutes=s.session_timeout_minutes,
         password_min_length=s.password_min_length,
+        library_fine_per_day=float(s.library_fine_per_day),
     )
 
 

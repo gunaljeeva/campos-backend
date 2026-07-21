@@ -1,8 +1,8 @@
 # Phase 5 — Communication: notifications, invites, complaints, complaint_replies, counselling_sessions
-from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey, CheckConstraint
+from sqlalchemy import String, Boolean, DateTime, Date, Text, ForeignKey, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
+from datetime import datetime, date
 from uuid import uuid4
 from app.database import Base
 
@@ -16,6 +16,7 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String, default="general")
+    scheduled_for: Mapped[date | None] = mapped_column(Date)   # if set, only visible on/after this date
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

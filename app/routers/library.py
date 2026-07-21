@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from decimal import Decimal
 from uuid import UUID
 from datetime import date
 from app.database import get_db
 from app.auth import get_current_user_id
 from app.models.library import LibraryBook, LibraryLoan
 from app.models.academic import Student
+from app.models.school_setting import SchoolSetting
 from app.schemas.library import (
     LibraryBookCreate,
     LibraryBookUpdate,
@@ -17,8 +19,6 @@ from app.schemas.library import (
 )
 
 router = APIRouter(prefix="/library", tags=["Library"])
-
-FINE_PER_DAY = 5  # ₹ per day overdue
 
 
 @router.get("", response_model=list[LibraryBookOut])
@@ -100,6 +100,7 @@ async def _loan_dict(db: AsyncSession, loan: LibraryLoan) -> dict:
         "student_id": loan.student_id, "borrower": borrower,
         "issue_date": loan.issue_date, "due_date": loan.due_date,
         "return_date": loan.return_date, "fine_amount": float(loan.fine_amount or 0),
+        "fine_per_day": float(loan.fine_per_day) if loan.fine_per_day is not None else None,
         "status": loan.status,
     }
 
@@ -133,6 +134,7 @@ async def issue_book(
         borrower_name=body.borrower_name,
         issue_date=body.issue_date,
         due_date=body.due_date,
+        fine_per_day=Decimal(str(body.fine_per_day)) if body.fine_per_day is not None else None,
         status="issued",
     )
     db.add(loan)
@@ -150,10 +152,17 @@ async def return_book(
     loan = await db.get(LibraryLoan, str(loan_id))
     if not loan:
         raise HTTPException(404, "Loan not found")
+    if loan.fine_per_day is not None:
+        fine_per_day = float(loan.fine_per_day)
+    else:
+        setting = (await db.execute(
+            select(SchoolSetting).where(SchoolSetting.school_id == loan.school_id)
+        )).scalar_one_or_none()
+        fine_per_day = float(setting.library_fine_per_day) if setting else 5.0
     ret = body.return_date or date.today()
     overdue_days = max(0, (ret - loan.due_date).days)
     loan.return_date = ret
-    loan.fine_amount = overdue_days * FINE_PER_DAY
+    loan.fine_amount = overdue_days * fine_per_day
     loan.status = "returned"
     await db.flush()
     return await _loan_dict(db, loan)

@@ -17,7 +17,9 @@ async def _out(db: AsyncSession, es: ExamSchedule) -> ExamScheduleOut:
     exam = await db.get(Exam, es.exam_id)
     return ExamScheduleOut(
         id=es.id, school_id=es.school_id, exam_id=es.exam_id,
-        exam_name=exam.name if exam else None, subject=es.subject,
+        exam_name=exam.name if exam else None,
+        exam_session=exam.session if exam else None,
+        subject=es.subject, grade=es.grade,
         exam_date=es.exam_date, start_time=es.start_time, end_time=es.end_time,
         room=es.room, max_marks=es.max_marks, created_at=es.created_at,
     )
@@ -45,7 +47,8 @@ async def create_schedule(
     _: UUID = Depends(get_current_user_id),
 ):
     es = ExamSchedule(
-        school_id=str(body.school_id), exam_id=str(body.exam_id), subject=body.subject,
+        school_id=str(body.school_id), exam_id=str(body.exam_id),
+        subject=body.subject, grade=body.grade,
         exam_date=body.exam_date, start_time=body.start_time, end_time=body.end_time,
         room=body.room, max_marks=body.max_marks,
     )

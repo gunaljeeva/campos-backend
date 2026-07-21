@@ -44,6 +44,9 @@ class Student(Base):
     category: Mapped[str | None] = mapped_column(String)
     emergency_contact: Mapped[str | None] = mapped_column(String)
     allergy_notes: Mapped[str | None] = mapped_column(Text)
+    room_no: Mapped[str | None] = mapped_column(String)
+    hostel_name: Mapped[str | None] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     school: Mapped["School"] = relationship(back_populates="students")

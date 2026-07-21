@@ -11,6 +11,9 @@ class BusFeeCreate(BaseModel):
     period: str
     amount: float
     due_date: Optional[date] = None
+    installment_name: Optional[str] = None
+    installment_no: int = 1
+    total_installments: int = 1
 
 
 class BusFeeOut(BaseModel):
@@ -24,6 +27,9 @@ class BusFeeOut(BaseModel):
     amount: float
     status: str
     due_date: Optional[date] = None
+    installment_no: int = 1
+    total_installments: int = 1
+    installment_name: Optional[str] = None
     paid_at: Optional[datetime] = None
     created_at: datetime
 

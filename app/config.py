@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         return self.smtp_from or self.smtp_user
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", ".env.dev")  # .env.dev takes priority (loaded last)
         case_sensitive = False
 
 

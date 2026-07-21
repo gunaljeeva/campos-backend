@@ -1,16 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from uuid import UUID, uuid4
 from typing import Optional
+import csv, io
 from app.database import get_db
 from app.auth import get_current_user_id, require_school_admin
 from app.models.academic import Student, Class
 from app.models.core import User, Profile, UserRole, Parent, ParentStudent, School
+from app.models.alumni import Alumnus
 from app.security import hash_password
 from app.services.email import send_welcome_email
 from app.schemas.academic import StudentCreateWithParent, StudentOut, StudentUpdate, StudentWithClassOut
+from datetime import datetime
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
@@ -208,8 +211,37 @@ async def update_student(
     student = await db.get(Student, str(student_id))
     if not student:
         raise HTTPException(404, "Student not found")
+
+    was_active = student.is_active
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(student, field, str(value) if isinstance(value, UUID) else value)
+
+    # Auto-create alumni record when a student is deactivated
+    if was_active and student.is_active is False:
+        # Try to get parent email via parent_students link
+        parent_email: str | None = None
+        ps = (await db.execute(
+            select(ParentStudent).where(ParentStudent.student_id == student.id)
+        )).scalars().first()
+        if ps:
+            parent = await db.get(Parent, ps.parent_id)
+            if parent:
+                prof = await db.get(Profile, parent.profile_id)
+                if prof:
+                    user = (await db.execute(
+                        select(User).where(User.id == parent.profile_id)
+                    )).scalars().first()
+                    if user:
+                        parent_email = user.email
+
+        db.add(Alumnus(
+            school_id=student.school_id,
+            name=student.full_name,
+            batch_year=str(datetime.utcnow().year),
+            email=parent_email,
+        ))
+
+    await db.flush()
     return student
 
 
@@ -223,3 +255,77 @@ async def delete_student(
     if not student:
         raise HTTPException(404, "Student not found")
     await db.delete(student)
+
+
+@router.post("/import")
+async def import_students_csv(
+    school_id: UUID = Query(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: UUID = Depends(require_school_admin),
+):
+    """Bulk-import students from a CSV file.
+
+    Expected columns: full_name, admission_no, gender, dob (YYYY-MM-DD),
+    class_grade, class_section, blood_group, emergency_contact
+    """
+    content = await file.read()
+    reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+
+    # Pre-load classes for grade+section lookup
+    classes = (await db.execute(
+        select(Class).where(Class.school_id == str(school_id))
+    )).scalars().all()
+    class_map = {(c.grade, c.section): c.id for c in classes}
+
+    created, skipped = 0, 0
+    errors: list[dict] = []
+
+    for row_num, row in enumerate(reader, start=2):
+        name = (row.get("full_name") or "").strip()
+        adm_no = (row.get("admission_no") or "").strip()
+        if not name or not adm_no:
+            errors.append({"row": row_num, "reason": "full_name and admission_no are required"})
+            skipped += 1
+            continue
+
+        # Duplicate admission number check
+        dup = (await db.execute(
+            select(Student).where(Student.school_id == str(school_id), Student.admission_no == adm_no)
+        )).scalars().first()
+        if dup:
+            errors.append({"row": row_num, "reason": f"admission_no '{adm_no}' already exists"})
+            skipped += 1
+            continue
+
+        grade = (row.get("class_grade") or "").strip()
+        section = (row.get("class_section") or "").strip()
+        class_id = class_map.get((grade, section))
+
+        from datetime import date as _date
+        dob_str = (row.get("dob") or "").strip()
+        dob = None
+        if dob_str:
+            try:
+                dob = _date.fromisoformat(dob_str)
+            except ValueError:
+                errors.append({"row": row_num, "reason": f"invalid dob '{dob_str}' (use YYYY-MM-DD)"})
+                skipped += 1
+                continue
+
+        db.add(Student(
+            school_id=str(school_id),
+            class_id=class_id,
+            full_name=name,
+            admission_no=adm_no,
+            gender=(row.get("gender") or "").strip() or None,
+            dob=dob,
+            blood_group=(row.get("blood_group") or "").strip() or None,
+            emergency_contact=(row.get("emergency_contact") or "").strip() or None,
+            room_no=(row.get("room_no") or "").strip() or None,
+            hostel_name=(row.get("hostel_name") or "").strip() or None,
+        ))
+        created += 1
+
+    await db.flush()
+    return {"created": created, "skipped": skipped, "errors": errors}

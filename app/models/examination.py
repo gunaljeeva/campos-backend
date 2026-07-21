@@ -15,6 +15,7 @@ class Exam(Base):
     school_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("schools.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     exam_type: Mapped[str | None] = mapped_column(String)
+    session: Mapped[str | None] = mapped_column(String)   # FN | AN
     class_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("classes.id", ondelete="SET NULL"))
     max_marks: Mapped[int] = mapped_column(Integer, default=100)
     exam_date: Mapped[date | None] = mapped_column(Date)

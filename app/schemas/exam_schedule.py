@@ -8,6 +8,7 @@ class ExamScheduleCreate(BaseModel):
     school_id: UUID
     exam_id: UUID
     subject: str
+    grade: str
     exam_date: Optional[date] = None
     start_time: Optional[time] = None
     end_time: Optional[time] = None
@@ -17,6 +18,7 @@ class ExamScheduleCreate(BaseModel):
 
 class ExamScheduleUpdate(BaseModel):
     subject: Optional[str] = None
+    grade: Optional[str] = None
     exam_date: Optional[date] = None
     start_time: Optional[time] = None
     end_time: Optional[time] = None
@@ -29,7 +31,9 @@ class ExamScheduleOut(BaseModel):
     school_id: UUID
     exam_id: UUID
     exam_name: Optional[str] = None
+    exam_session: Optional[str] = None
     subject: str
+    grade: Optional[str] = None
     exam_date: Optional[date] = None
     start_time: Optional[time] = None
     end_time: Optional[time] = None

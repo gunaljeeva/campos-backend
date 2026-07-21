@@ -19,6 +19,8 @@ class StudentCreate(BaseModel):
     category: Optional[str] = None
     emergency_contact: Optional[str] = None
     allergy_notes: Optional[str] = None
+    room_no: Optional[str] = None
+    hostel_name: Optional[str] = None
 
 
 class StudentCreateWithParent(StudentCreate):
@@ -43,11 +45,15 @@ class StudentUpdate(BaseModel):
     category: Optional[str] = None
     emergency_contact: Optional[str] = None
     allergy_notes: Optional[str] = None
+    room_no: Optional[str] = None
+    hostel_name: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class StudentOut(StudentCreate):
     id: UUID
     photo_url: Optional[str] = None
+    is_active: bool = True
     created_at: datetime
 
     model_config = {"from_attributes": True}

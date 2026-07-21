@@ -29,7 +29,8 @@ def grade_for(pct: float) -> str:
 def _exam_dict(exam: Exam, class_label: str | None) -> dict:
     return {
         "id": exam.id, "school_id": exam.school_id, "name": exam.name,
-        "exam_type": exam.exam_type, "class_id": exam.class_id, "class_label": class_label,
+        "session": exam.session, "exam_type": exam.exam_type,
+        "class_id": exam.class_id, "class_label": class_label,
         "max_marks": exam.max_marks, "exam_date": exam.exam_date,
         "description": exam.description, "created_at": exam.created_at,
     }
@@ -71,6 +72,7 @@ async def create_exam(
     exam = Exam(
         school_id=str(body.school_id),
         name=body.name,
+        session=body.session,
         exam_type=body.exam_type,
         class_id=str(body.class_id) if body.class_id else None,
         max_marks=body.max_marks,

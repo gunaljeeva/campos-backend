@@ -1,8 +1,9 @@
 # System settings — one configuration row per school
-from sqlalchemy import String, Integer, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Numeric, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
+from decimal import Decimal
 from uuid import uuid4
 from app.database import Base
 
@@ -25,5 +26,6 @@ class SchoolSetting(Base):
     # Security
     session_timeout_minutes: Mapped[int] = mapped_column(Integer, default=60)
     password_min_length: Mapped[int] = mapped_column(Integer, default=8)
+    library_fine_per_day: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=5.00, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

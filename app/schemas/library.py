@@ -47,6 +47,7 @@ class LoanCreate(BaseModel):
     borrower_name: Optional[str] = None
     issue_date: date
     due_date: date
+    fine_per_day: Optional[float] = None
 
 
 class LoanReturn(BaseModel):
@@ -63,4 +64,5 @@ class LoanOut(BaseModel):
     due_date: date
     return_date: Optional[date] = None
     fine_amount: float
+    fine_per_day: Optional[float] = None
     status: str
