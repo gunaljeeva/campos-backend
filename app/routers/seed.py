@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from sqlalchemy import select, update
 from app.database import get_db, engine, Base
 from app.security import hash_password, create_access_token
 from app.models.core import User, School, Profile, UserRole, Parent, ParentStudent
@@ -274,9 +275,53 @@ async def seed_demo_data(
     return {
         "status": "seeded",
         "school": "Delhi Royal School",
-        "admin": "admin@campos.dev / admin123",
-        "teachers": "teacher@campos.dev / ravi / priya / mohan  (all: teacher123)",
-        "parents": "rajesh@demo.com / sunita@demo.com … (all: Parent@123)",
+        "admin": "admin@campos.dev / DRS@Admin#2026",
+        "teachers": "teacher@campos.dev / ravi / priya / mohan  (all: DRS@Teach#2026)",
+        "parents": "rajesh@demo.com / sunita@demo.com … (all: DRS@Parent#2026)",
         "students": len(STUDENTS),
         "admin_token": token,
+    }
+
+
+ADMIN_PWD   = "DRS@Admin#2026"
+TEACHER_PWD = "DRS@Teach#2026"
+PARENT_PWD  = "DRS@Parent#2026"
+
+DEMO_TEACHER_EMAILS = [d[1] for d in TEACHER_DATA]
+DEMO_PARENT_EMAILS  = [s[6] for s in STUDENTS]
+
+
+@router.post("/reset-passwords")
+async def reset_demo_passwords(
+    secret: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    if secret != SEED_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid seed secret")
+
+    # Admin
+    await db.execute(
+        update(User).where(User.email == "admin@campos.dev")
+        .values(password_hash=hash_password(ADMIN_PWD))
+    )
+
+    # Teachers
+    for email in DEMO_TEACHER_EMAILS:
+        await db.execute(
+            update(User).where(User.email == email)
+            .values(password_hash=hash_password(TEACHER_PWD))
+        )
+
+    # Parents
+    for email in set(DEMO_PARENT_EMAILS):
+        await db.execute(
+            update(User).where(User.email == email)
+            .values(password_hash=hash_password(PARENT_PWD))
+        )
+
+    return {
+        "status": "passwords updated",
+        "admin":   f"admin@campos.dev / {ADMIN_PWD}",
+        "teachers": f"all teachers / {TEACHER_PWD}",
+        "parents":  f"all parents / {PARENT_PWD}",
     }
