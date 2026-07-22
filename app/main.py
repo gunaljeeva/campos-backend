@@ -7,6 +7,7 @@ from app.routers import scholarship, canteen, sports, hostel, front_office, teac
 from app.routers import notifications, invites
 from app.routers import timetable
 from app.routers import homework_submissions
+from app.routers import seed
 
 app = FastAPI(
     title="CampOS API",
@@ -73,6 +74,7 @@ app.include_router(notifications.router)
 app.include_router(invites.router)
 app.include_router(timetable.router)
 app.include_router(homework_submissions.router)
+app.include_router(seed.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
