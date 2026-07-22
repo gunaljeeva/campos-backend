@@ -4,8 +4,10 @@ from typing import AsyncGenerator
 from app.config import settings
 
 
+_db_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1).replace("postgres://", "postgresql+asyncpg://", 1)
+
 engine = create_async_engine(
-    settings.database_url,
+    _db_url,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
